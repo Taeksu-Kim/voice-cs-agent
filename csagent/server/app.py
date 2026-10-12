@@ -21,8 +21,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from csagent.agent.agent import CSAgent, reply_to_dict
+from csagent.agent.baseline import reply_to_dict
 from csagent.agent.contracts import CallContext, TurnInput
+from csagent.agent.interface import Agent
 from csagent.config import ROOT
 from csagent.evaluation.scenario import Scenario, load_scenarios
 from csagent.server.sessions import SessionStore
@@ -36,7 +37,7 @@ class TurnRequest(BaseModel):
     utterance: str
 
 
-def create_app(agent: CSAgent, scenarios: list[Scenario], *,
+def create_app(agent: Agent, scenarios: list[Scenario], *,
                web_dir: Optional[Path] = ROOT / "web") -> FastAPI:
     app = FastAPI(title="customer-service-agent")
     store = SessionStore()
@@ -44,7 +45,7 @@ def create_app(agent: CSAgent, scenarios: list[Scenario], *,
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"ok": True, "scenarios": len(scenarios)}
+        return {"ok": True, "agent": getattr(agent, "name", ""), "scenarios": len(scenarios)}
 
     @app.get("/api/scenarios")
     def list_scenarios() -> list[dict]:
@@ -68,9 +69,11 @@ def create_app(agent: CSAgent, scenarios: list[Scenario], *,
     @app.get("/api/sessions/{session_id}")
     def get_session(session_id: str) -> dict:
         s = _session(store, session_id)
-        return {"session_id": s.id, "scenario_id": s.scenario_id, "history": s.history,
+        return {"session_id": s.id, "scenario_id": s.scenario_id, "history": s.state.history,
                 "disposition": s.disposition, "ended": s.ended,
-                "replies": [reply_to_dict(r) for r in s.replies]}
+                "authenticated": s.state.authenticated,
+                "replies": [reply_to_dict(r) for r in s.replies],
+                "trace": s.state.trace.to_dicts()}
 
     @app.post("/api/sessions/{session_id}/turn")
     def turn(session_id: str, req: TurnRequest) -> StreamingResponse:
@@ -82,10 +85,10 @@ def create_app(agent: CSAgent, scenarios: list[Scenario], *,
 
         def events() -> Iterator[str]:
             try:
-                for ev in agent.respond_stream(s.ctx, list(s.history), TurnInput(req.utterance)):
+                for ev in agent.respond_stream(s.state, TurnInput(req.utterance)):
                     if ev.type == "done":
                         reply = ev.data["reply"]
-                        s.record(req.utterance, reply)
+                        s.record(reply)
                         yield _sse("done", {**reply_to_dict(reply), "session_ended": s.ended})
                     else:
                         yield _sse(ev.type, ev.data)
@@ -102,10 +105,9 @@ def create_app(agent: CSAgent, scenarios: list[Scenario], *,
 
 def create_default_app() -> FastAPI:
     """실제 구성요소로 조립한 앱 (uvicorn 진입점)."""
-    from csagent.factory import build_llm, build_retriever
+    from csagent.factory import build_agent
 
-    return create_app(CSAgent(build_retriever(with_reranker=True), build_llm()),
-                      load_scenarios(ROOT / "scenarios"))
+    return create_app(build_agent(), load_scenarios(ROOT / "scenarios"))
 
 
 def _session(store: SessionStore, session_id: str):

@@ -2,12 +2,11 @@ import json
 
 from fastapi.testclient import TestClient
 
-from csagent.agent.agent import CSAgent
 from csagent.agent.contracts import CallContext
 from csagent.evaluation.scenario import Expectation, Scenario
 from csagent.llm import ScriptedLLM
 from csagent.server.app import create_app
-from tests.test_agent_evaluation import FakeRetriever, _say
+from tests.test_agent_evaluation import _say, make_agent
 
 SC = Scenario("s1_demo", "S1", "B0",
               CallContext(audience="consumer", today="2026-10-12",
@@ -16,7 +15,7 @@ SC = Scenario("s1_demo", "S1", "B0",
 
 
 def _client(outputs):
-    agent = CSAgent(FakeRetriever(), ScriptedLLM(outputs))
+    agent = make_agent(ScriptedLLM(outputs))
     return TestClient(create_app(agent, [SC], web_dir=None))
 
 

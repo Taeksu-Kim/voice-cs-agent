@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from csagent.agent.agent import CSAgent
 from csagent.agent.contracts import AgentReply, TurnInput
+from csagent.agent.interface import Agent, new_call
+from csagent.agent.state import CallState
 from csagent.evaluation.scenario import Scenario
 from csagent.evaluation.simulator import CustomerSimulator
 
@@ -14,10 +15,15 @@ from csagent.evaluation.simulator import CustomerSimulator
 @dataclass
 class Transcript:
     scenario_id: str
-    turns: list[tuple[str, str]] = field(default_factory=list)   # [("customer"|"agent", 발화)]
+    state: CallState
+    agent_name: str = ""
     replies: list[AgentReply] = field(default_factory=list)      # 에이전트 턴별 메타 (도구·검색·시간)
     disposition: Optional[str] = None
     end_reason: str = ""                                          # agent_ended | customer_hung_up | max_turns
+
+    @property
+    def turns(self) -> list[tuple[str, str]]:
+        return self.state.history
 
     def tool_names(self) -> list[str]:
         return [c.name for r in self.replies for c in r.tool_calls]
@@ -27,23 +33,23 @@ class Transcript:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "scenario_id": self.scenario_id, "disposition": self.disposition,
-            "end_reason": self.end_reason, "turns": self.turns,
+            "scenario_id": self.scenario_id, "agent": self.agent_name,
+            "disposition": self.disposition, "end_reason": self.end_reason, "turns": self.turns,
             "replies": [{"text": r.text, "tools": [(c.name, c.args, c.result) for c in r.tool_calls],
                          "retrieved": r.retrieved, "timings_ms": r.timings_ms, "tokens": r.tokens}
                         for r in self.replies],
+            "trace": self.state.trace.to_dicts(),
         }
 
 
-def run_scenario(agent: CSAgent, customer: CustomerSimulator, scenario: Scenario) -> Transcript:
-    tr = Transcript(scenario.id)
+def run_scenario(agent: Agent, customer: CustomerSimulator, scenario: Scenario) -> Transcript:
+    tr = Transcript(scenario.id, new_call(scenario.context), agent_name=getattr(agent, "name", ""))
     for _ in range(scenario.max_turns):
-        utterance = customer.next(scenario, tr.turns)
+        utterance = customer.next(scenario, tr.state.history)
         if utterance is None:
             tr.end_reason = "customer_hung_up"
             break
-        reply = agent.respond(scenario.context, tr.turns, TurnInput(utterance))
-        tr.turns += [("customer", utterance), ("agent", reply.text)]
+        reply = agent.respond(tr.state, TurnInput(utterance))
         tr.replies.append(reply)
         if reply.disposition:
             tr.disposition = reply.disposition  # 링크 발송 등 중간 결과도 남기고, 마지막 값이 최종

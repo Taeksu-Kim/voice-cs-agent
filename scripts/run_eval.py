@@ -16,9 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from csagent.agent.agent import CSAgent
 from csagent.config import ROOT
-from csagent.factory import build_llm, build_retriever
+from csagent.factory import build_agent, build_llm
 from csagent.evaluation.runner import run_scenario
 from csagent.evaluation.scenario import load_scenarios
 from csagent.evaluation.scoring import LLMJudge, score
@@ -30,14 +29,15 @@ def main() -> None:
     ap.add_argument("--only", default="", help="시나리오 id 접두어")
     ap.add_argument("--no-judge", action="store_true")
     ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--agent", default="A1", help="A0 | A1")
     args = ap.parse_args()
 
     llm = build_llm()
-    agent = CSAgent(build_retriever(with_reranker=True), llm)
+    agent = build_agent(args.agent)
     judge = None if args.no_judge else LLMJudge(llm)
     scenarios = [x for x in load_scenarios(ROOT / "scenarios") if x.id.startswith(args.only)]
 
-    out_dir = ROOT / "runs" / datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = ROOT / "runs" / f"{datetime.now():%Y%m%d_%H%M%S}_{agent.name}"
     out_dir.mkdir(parents=True)
     rows = []
     with (out_dir / "results.jsonl").open("w", encoding="utf-8") as f:
