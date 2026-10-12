@@ -1,0 +1,12 @@
+# 토스 원문·AI Hub 데이터는 재배포하지 않는다
+data/raw/
+data/processed/
+# 로컬 벡터 DB (Milvus Lite)
+*.db
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+# 평가 실행 결과 (통화 기록 포함)
+runs/
+.pytest_cache/

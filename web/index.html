@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>상담 에이전트 콘솔</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>상담 에이전트 콘솔</h1>
+    <div class="controls">
+      <select id="scenario"></select>
+      <button id="start" class="primary">통화 시작</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="call">
+      <div id="customer" class="customer-card muted">시나리오를 고르고 통화를 시작하세요.</div>
+      <div id="chat" class="chat" aria-live="polite"></div>
+      <form id="composer" class="composer">
+        <input id="utterance" autocomplete="off" placeholder="고객으로서 말하기 (STT 결과처럼 입력)" disabled>
+        <button id="send" class="primary" disabled>보내기</button>
+        <button id="stop" type="button" disabled title="응답 생성을 중단 (끼어들기)">중단</button>
+      </form>
+    </section>
+
+    <aside class="debug">
+      <h2>턴 상세</h2>
+      <div id="status" class="status muted">대기 중</div>
+      <div id="turns"></div>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
