@@ -18,8 +18,9 @@ class Transcript:
     state: CallState
     agent_name: str = ""
     replies: list[AgentReply] = field(default_factory=list)      # 에이전트 턴별 메타 (도구·검색·시간)
-    disposition: Optional[str] = None
+    disposition: Optional[str] = None     # 에이전트가 남긴 통화 결과. 남기지 않고 고객이 끊으면 "customer_ended"
     end_reason: str = ""                                          # agent_ended | customer_hung_up | max_turns
+    customer_satisfied: Optional[bool] = None                     # 시뮬레이터 자기 보고 (참고용, 채점에 안 씀)
 
     @property
     def turns(self) -> list[tuple[str, str]]:
@@ -34,7 +35,8 @@ class Transcript:
     def to_dict(self) -> dict[str, Any]:
         return {
             "scenario_id": self.scenario_id, "agent": self.agent_name,
-            "disposition": self.disposition, "end_reason": self.end_reason, "turns": self.turns,
+            "disposition": self.disposition, "end_reason": self.end_reason,
+            "customer_satisfied": self.customer_satisfied, "turns": self.turns,
             "replies": [{"text": r.text, "tools": [(c.name, c.args, c.result) for c in r.tool_calls],
                          "retrieved": r.retrieved, "timings_ms": r.timings_ms, "tokens": r.tokens}
                         for r in self.replies],
@@ -58,7 +60,8 @@ def run_scenario(agent: Agent, customer: CustomerSimulator, scenario: Scenario) 
             break
     else:
         tr.end_reason = "max_turns"
+    tr.customer_satisfied = getattr(customer, "satisfied", None)
     if tr.disposition is None:
-        # 에이전트가 결과를 남기지 않고 끝난 통화 — 고객이 만족하고 끊었을 때만 해결로 본다
-        tr.disposition = "resolved" if getattr(customer, "satisfied", None) else "unresolved"
+        # 에이전트가 결과를 남기지 않고 끝난 통화 — 해결 여부는 시뮬레이터 자기 보고가 아니라 Judge가 판정한다
+        tr.disposition = "customer_ended"
     return tr

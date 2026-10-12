@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from csagent.agent.state import CallState
@@ -57,17 +58,39 @@ def request_app_auth(state: CallState) -> dict:
     return {"status": "failed", "failures": state.auth_failures}
 
 
-def request_confirmation(state: CallState, action: str, target: dict) -> dict:
-    """실행 전 고객 재확인을 건다. 확정은 다음 턴 고객 발화를 코드가 판정해서 한다."""
-    if not isinstance(target, dict):
+def request_confirmation(state: CallState, action: str, target) -> dict:
+    """실행 전 고객 재확인을 건다. 고객의 답은 다음 턴에 LLM이 판정하고 코드가 인용을 대조해 확정한다."""
+    target = _as_target(target)
+    if target is None:
         return {"error": "target은 객체여야 함 (예: {\"card_id\": \"C1\"})"}
+    if state.is_confirmed(action, target):
+        return {"status": "already_confirmed", "note": "이미 고객이 동의했습니다. 다시 묻지 말고 실행하세요."}
+    p = state.pending
+    if p and p.kind == "confirm" and p.action == action and p.target == target:
+        # 같은 확인을 다시 걸면 원래 질문 턴을 유지한다 (다음 턴 판정이 유효하도록)
+        return {"status": "pending", "action": action, "target": target, "note": "이미 같은 확인을 걸어 두었습니다."}
     state.ask("confirm", action, target)
     return {"status": "pending", "action": action, "target": target,
             "note": "고객에게 실행 내용을 말하고 진행 여부를 물어보세요. 답은 다음 턴에 확인됩니다."}
 
 
+def _as_target(target):
+    """LLM이 대상 객체를 JSON 문자열로 넣는 경우가 있다 → 객체로 해석 (형식 변환, 의미 판단 아님)."""
+    if isinstance(target, dict):
+        return target
+    if isinstance(target, str):
+        try:
+            value = json.loads(target)
+            return value if isinstance(value, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
 def ask_contact(state: CallState) -> dict:
     """아웃바운드: 통화 상대가 담당자인지 묻는다. 확정은 다음 턴 고객 발화 판정으로."""
+    if state.contact_verified:
+        return {"status": "already_verified", "note": "이미 담당자로 확인됐습니다. 다시 묻지 마세요."}
     state.ask("contact")
     return {"status": "pending", "note": "담당자 본인인지 물어보세요."}
 
@@ -138,10 +161,10 @@ def default_registry() -> ToolRegistry:
         ToolSpec("request_app_auth", "고객 휴대폰으로 앱 본인 인증 요청 (결과가 바로 돌아옴)", risk="notify",
                  fn=request_app_auth),
         ToolSpec("request_confirmation", "실행 도구를 쓰기 전 고객 재확인을 건다. 고객의 답은 다음 턴에 확인됨",
-                 {"action": "실행할 도구 이름", "target": "실행 대상 객체 (예: {\"card_id\": \"C1\"})"},
-                 risk="notify", fn=request_confirmation),
+                 {"action": "실행할 도구 이름", "target": "실행 도구에 넣을 인자와 같은 JSON 객체 — 문자열 아님 (예: {\"card_id\": \"C1\"})"},
+                 risk="notify", asks_customer=True, fn=request_confirmation),
         ToolSpec("ask_contact", "아웃바운드: 통화 상대가 담당자인지 확인 질문을 건다", risk="notify",
-                 fn=ask_contact),
+                 asks_customer=True, fn=ask_contact),
         ToolSpec("suspend_card", "카드 일시정지 (토스 비밀번호로 해제 가능)", {"card_id": "카드 ID"},
                  risk="execute", requires_auth=True, requires_confirmation=True, target_keys=("card_id",),
                  fn=suspend_card),

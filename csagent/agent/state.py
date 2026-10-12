@@ -34,6 +34,11 @@ class Confirmation:
     turn: int
 
 
+def covers(asked: dict[str, Any], target: dict[str, Any]) -> bool:
+    """확인받은 대상이 실행 대상의 키·값을 모두 포함하나 (확인 때 카드 이름 같은 설명 키가 더 붙어도 된다)."""
+    return bool(target) and all(v is not None and asked.get(k) == v for k, v in target.items())
+
+
 @dataclass
 class TaskState:
     """업무 하나의 진행 상태 (C'의 워커가 사용)."""
@@ -41,6 +46,7 @@ class TaskState:
     stage: str = "start"
     slots: dict[str, Any] = field(default_factory=dict)
     done: bool = False
+    tools_done: set[str] = field(default_factory=set)   # 이 업무에서 성공한 도구 (절차 강제용)
 
 
 @dataclass
@@ -55,6 +61,7 @@ class CallState:
     pending: Optional[Pending] = None
     confirmations: list[Confirmation] = field(default_factory=list)
     executed: set[str] = field(default_factory=set)                # 실행 키 (중복 실행 방지)
+    succeeded: list[tuple[str, dict]] = field(default_factory=list)  # 성공한 실행 (도구, 대상)
     # 업무 진행 (C')
     active: Optional[TaskState] = None
     queue: list[TaskState] = field(default_factory=list)
@@ -89,5 +96,10 @@ class CallState:
         return True
 
     def is_confirmed(self, action: str, target: dict[str, Any]) -> bool:
-        """같은 도구·같은 대상으로 재확인된 기록이 있는가. 대상이 하나라도 다르면 무효."""
-        return any(c.action == action and c.target == target for c in self.confirmations)
+        """같은 도구·같은 대상으로 재확인된 기록이 있는가. 실행 대상의 키 값이 하나라도 다르면 무효."""
+        return any(c.action == action and covers(c.target, target) for c in self.confirmations)
+
+    def unexecuted_confirmations(self) -> list[Confirmation]:
+        """고객이 동의했는데 아직 실행이 성공하지 않은 것 (안 했거나 실패)."""
+        return [c for c in self.confirmations
+                if not any(a == c.action and covers(c.target, t) for a, t in self.succeeded)]

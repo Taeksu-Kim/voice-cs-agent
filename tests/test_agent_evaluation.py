@@ -8,6 +8,7 @@ from csagent.agent.interface import new_call
 from csagent.agent.tools.mock import default_registry
 from csagent.evaluation.runner import run_scenario
 from csagent.evaluation.scenario import Expectation, Scenario, load_scenarios
+from csagent.evaluation.procedure import audit
 from csagent.evaluation.scoring import LLMJudge, score
 from csagent.evaluation.simulator import ScriptedCustomer
 from csagent.llm import ScriptedLLM, parse_json
@@ -79,37 +80,44 @@ def test_runner_and_rule_scoring():
                                 gold_docs=["faq:4705"]))
     assert tr.disposition == "resolved" and tr.end_reason == "agent_ended"
     sco = score(_scenario(dispositions=["resolved"], tools_forbidden=["lookup_orders"],
-                          gold_docs=["faq:4705"]), tr)
+                          gold_docs=["faq:4705"]), tr, default_registry())
     assert sco.passed, [c.__dict__ for c in sco.failed()]
 
 
 def test_voice_format_check_flags_lists_and_parens():
     llm = ScriptedLLM([_say("고객센터(1644-2944)로\n- 문의하세요")])
     tr = run_scenario(make_agent(llm), ScriptedCustomer(["지연돼요"]), _scenario())
-    names = {c.name for c in score(_scenario(), tr).failed()}
+    names = {c.name for c in score(_scenario(), tr, default_registry()).failed()}
     assert "voice_format" in names
 
 
-def test_customer_hangup_without_satisfaction_is_unresolved():
+def test_customer_hangup_is_neutral_and_disposition_not_scored():
     llm = ScriptedLLM([_say("확인해 볼게요.")])
-    tr = run_scenario(make_agent(llm), ScriptedCustomer(["택배요"], satisfied=False), _scenario())
-    assert tr.disposition == "unresolved"
+    sc = _scenario(dispositions=["resolved"])
+    tr = run_scenario(make_agent(llm), ScriptedCustomer(["택배요"], satisfied=False), sc)
+    assert tr.disposition == "customer_ended" and tr.customer_satisfied is False
+    disp = next(c for c in score(sc, tr, default_registry()).checks if c.name == "disposition")
+    assert disp.passed is None   # 고객이 끊은 통화의 해결 여부는 Judge(goal_resolved)가 판정
 
 
-def test_judge_yes_no_to_pass_fail():
+def test_judge_yes_no_to_pass_fail_and_goal_and_grounded():
     sc = _scenario(must_mention=["평균 3~5일"], must_not=["도착일 확정"])
     llm = ScriptedLLM([_say("평균 삼에서 오 일이요.")])
     tr = run_scenario(make_agent(llm), ScriptedCustomer(["며칠요"], satisfied=True), sc)
-    judge = LLMJudge(ScriptedLLM([json.dumps({"answers": [
-        {"id": "mention_0", "answer": "YES", "reason": "말함"},
-        {"id": "must_not_0", "answer": "NO", "reason": "안 함"}]})]))
-    checks = {c.name: c.passed for c in judge.checks(sc, tr)}
-    assert checks == {"mention_0": True, "must_not_0": True}
+    judge = LLMJudge(ScriptedLLM([
+        json.dumps({"answers": [
+            {"id": "mention_0", "answer": "YES", "reason": "말함"},
+            {"id": "must_not_0", "answer": "NO", "reason": "안 함"},
+            {"id": "goal_resolved", "answer": "YES", "reason": "해결"}]}),
+        json.dumps({"unsupported": "NO", "claim": ""}),   # 1턴 근거 판정
+    ]))
+    checks = {c.name: c.passed for c in judge.checks(sc, tr, audit(tr.state.trace, default_registry()))}
+    assert checks == {"mention_0": True, "must_not_0": True, "goal_resolved": True, "grounded": True}
 
 
 def test_scenario_files_load():
     scs = load_scenarios(Path(__file__).resolve().parent.parent / "scenarios")
-    assert len(scs) >= 5 and all(s.expect.dispositions for s in scs)
+    assert len(scs) >= 15 and {s.task for s in scs} >= {"S1", "S4", "S5", "O1"}
 
 
 def test_say_extractor_streams_only_say_value():

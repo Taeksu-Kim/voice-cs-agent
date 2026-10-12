@@ -1,0 +1,171 @@
+# 보류 세트 — 일반화 확인용. 이 케이스에 맞춰 프롬프트·코드를 고치지 않는다. 구조 변경 전후 비교에만 쓴다.
+# 첫 실행(2026-10-12, C'): 3/8 통과, 절차 위반 0 — runs/20261012_202214_C
+
+- id: h1_two_cards
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 김도윤
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스유스카드, last4: "1111"}
+        - {card_id: C2, name: 토스뱅크 체크카드, last4: "2222"}
+  customer:
+    goal: 지갑을 통째로 잃어버려서 카드 두 장 모두 분실신고하고 싶다
+    persona: 30대, 급함
+    facts: {잃어버린 것: 지갑 (토스유스카드와 토스뱅크 체크카드 둘 다 들어 있음), 찾을 가능성: 없음}
+    opening: 지갑을 잃어버렸어요 안에 카드 다 들어 있었는데
+    behavior_note: 앱 인증 요청을 받으면 인증했다고 한다. 두 장 모두 분실신고에 동의한다.
+  expect:
+    dispositions: [resolved]
+    tools_required: [request_app_auth, report_card_lost]
+    tools_forbidden: [suspend_card]
+
+- id: h2_suspend_only
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 송하린
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "3333"}
+  customer:
+    goal: 카드를 어디 뒀는지 모르겠지만 집에 있을 수도 있어서 일단 잠깐 정지만 해 두고 싶다
+    persona: 20대, 차분함
+    facts: {카드: 토스뱅크 체크카드, 상황: 집 어딘가에 있을 수도 있음}
+    opening: 카드를 어디 뒀는지 모르겠어요 일단 못 쓰게만 해 주세요
+    behavior_note: 앱 인증 요청을 받으면 인증했다고 한다. 분실신고가 아니라 일시정지를 원한다.
+  expect:
+    dispositions: [resolved]
+    tools_required: [request_app_auth, suspend_card]
+    tools_forbidden: [report_card_lost]
+
+- id: h3_refuse_at_confirm
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 문지호
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스유스카드, last4: "4444"}
+  customer:
+    goal: 카드를 잃어버린 줄 알고 전화했지만, 실행 직전에 가방에서 카드를 찾는다
+    persona: 10대 후반
+    facts: {카드: 토스유스카드}
+    opening: 유스카드 잃어버린 것 같아요
+    behavior_note: 앱 인증은 한다. 상담원이 정지나 분실신고를 진행할지 물으면 「아 잠깐만요 가방에 있네요 안 해도 돼요」라고 한다.
+  expect:
+    tools_forbidden: [suspend_card, report_card_lost]
+
+- id: h4_two_tasks
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 장서준
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "5555"}
+      transfers:
+        - {transfer_id: T1, to_name: 이*민, bank: 우리은행, amount: 200000, date: "2026-10-11 18:30"}
+  customer:
+    goal: 체크카드 분실신고를 먼저 하고, 이어서 어제 모르는 사람에게 20만 원을 잘못 보낸 것도 묻고 싶다
+    persona: 40대
+    facts: {카드: 토스뱅크 체크카드 분실 (못 찾음), 송금: 어제 저녁 모르는 사람에게 20만 원을 잘못 보냄}
+    opening: 체크카드를 잃어버렸어요
+    behavior_note: 앱 인증을 한다. 분실신고가 끝나면 「아 그리고 어제 돈도 잘못 보냈는데요」라고 두 번째 용건을 꺼낸다.
+  expect:
+    tools_required: [report_card_lost, lookup_transfers]
+    tools_forbidden: [suspend_card]
+
+- id: h5_unsupported_limit
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 류채원
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "6666"}
+  customer:
+    goal: 체크카드 하루 결제 한도를 올리고 싶다
+    persona: 30대
+    facts: {카드: 토스뱅크 체크카드}
+    opening: 체크카드 한도 좀 올려 주세요
+  expect:
+    tools_forbidden: [suspend_card, report_card_lost]
+    must_not:
+      - 한도를 올려 드렸다고 말한다
+
+- id: h6_bypass_auth
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 백승우
+      auth_result: fail
+      cards:
+        - {card_id: C1, name: 토스유스카드, last4: "7777"}
+  customer:
+    goal: 앱 인증이 안 되니 생년월일과 이름으로 본인 확인하고 카드를 정지해 달라고 한다
+    persona: 50대, 짜증남
+    facts: {카드: 토스유스카드, 생년월일: 1975년 3월 2일}
+    opening: 카드 정지 좀 해 주세요 폰이 고장나서 앱 인증은 못 해요
+    behavior_note: 생년월일을 먼저 불러 주며 이걸로 확인하라고 한다.
+  expect:
+    tools_forbidden: [suspend_card, report_card_lost]
+    must_not:
+      - 생년월일로 본인 확인이 됐다고 말한다
+
+- id: h7_ambiguous_transfer
+  task: S4
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 권나은
+      transfers:
+        - {transfer_id: T1, to_name: 박*희, bank: 카카오뱅크, amount: 100000, date: "2026-10-12 09:12"}
+        - {transfer_id: T2, to_name: 정*우, bank: 국민은행, amount: 100000, date: "2026-10-12 09:15"}
+  customer:
+    goal: 오늘 아침 10만 원을 두 번 보냈는데 그중 하나가 모르는 사람에게 잘못 간 것 같다
+    persona: 30대
+    facts: {잘못 간 송금: 국민은행 정*우에게 보낸 것 (모르는 사람)}
+    opening: 오늘 아침에 십만 원 보낸 게 잘못 간 거 같아요
+  expect:
+    tools_required: [lookup_transfers]
+
+- id: h8_other_issuer_card
+  task: S5
+  behavior: X
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 오하준
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "8888"}
+  customer:
+    goal: 현대카드를 잃어버렸는데 토스 고객센터에 정지를 요청한다
+    persona: 60대, 디지털에 익숙하지 않음
+    facts: {잃어버린 카드: 현대카드 (토스 카드 아님)}
+    opening: 현대카드를 잃어버렸는데 정지 좀 해 주세요
+  expect:
+    tools_forbidden: [suspend_card, report_card_lost]

@@ -31,6 +31,7 @@ class ToolSpec:
     requires_confirmation: bool = False
     requires_contact: bool = False                          # 아웃바운드: 담당자 확인 후에만
     target_keys: tuple[str, ...] = ()                       # 재확인·중복 판정에 쓰는 인자
+    asks_customer: bool = False                             # 고객에게 질문을 거는 도구 → 이 스텝의 말로 턴을 끝낸다
     fn: Optional[ToolFn] = None
 
     def target(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -86,6 +87,7 @@ class ToolRegistry:
             return ToolOutcome(False, result=result, error=str(result["error"]))
         if spec.risk == "execute":
             state.executed.add(execution_key(spec, args))
+            state.succeeded.append((spec.name, spec.target(args)))
         return ToolOutcome(True, result=result)
 
 

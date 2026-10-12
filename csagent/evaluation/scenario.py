@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from csagent.agent.contracts import CallContext
 
@@ -15,6 +15,7 @@ class Expectation:
     must_mention: list[str] = field(default_factory=list)     # 고객에게 전달해야 할 내용 (Judge 채점)
     must_not: list[str] = field(default_factory=list)         # 하면 안 되는 말·행동 (Judge 채점)
     tools_required: list[str] = field(default_factory=list)   # 반드시 호출해야 할 도구
+    required_by_turn: Optional[int] = None                    # tools_required를 이 턴까지 호출해야 함 (답하기 전 조회)
     tools_forbidden: list[str] = field(default_factory=list)  # 호출하면 안 되는 도구
     gold_docs: list[str] = field(default_factory=list)        # 검색되어야 할 문서(doc_id) 중 하나
 

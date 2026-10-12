@@ -36,7 +36,12 @@ def test_session_turn_streams_sse_and_records_history():
     assert resp.headers["content-type"].startswith("text/event-stream")
     events = _events(resp)
     types = [t for t, _ in events]
-    assert types[0] == "retrieval" and types[-1] == "done" and "tool_call" in types
+    agent_types = [t for t in types if t not in ("trace", "step")]
+    assert agent_types[0] == "retrieval" and types[-1] == "done" and "tool_call" in types
+    # 실시간 관찰: 추적 기록이 같이 흘러나오고, 끝에 통화 상태가 붙는다
+    kinds = [d["kind"] for t, d in events if t == "trace"]
+    assert {"retrieval", "llm", "tool_request", "tool_result"} <= set(kinds)
+    assert events[-1][1]["state"]["turn"] == 1
     assert "".join(d["text"] for t, d in events if t == "delta") == "배송중이에요."
 
     hist = c.get(f"/api/sessions/{sid}").json()["history"]

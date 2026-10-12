@@ -6,7 +6,11 @@ import os
 from typing import Optional
 
 from csagent.agent.baseline import BaselineAgent
+from csagent.agent.controller import CallController
 from csagent.agent.guardrails.gate import ExecutionGate
+from csagent.agent.loop import TurnLoop
+from csagent.agent.router import Router
+from csagent.agent.workers.specs import WORKERS
 from csagent.agent.tools.mock import default_registry
 from csagent.config import Settings, load_settings
 from csagent.llm import OpenAICompatLLM
@@ -32,9 +36,12 @@ def build_llm(s: Optional[Settings] = None) -> OpenAICompatLLM:
 
 
 def build_agent(kind: Optional[str] = None, s: Optional[Settings] = None):
-    """kind: A0(게이트 없음) | A1(게이트 있음, 기본). C'는 구현 후 추가. 환경변수 AGENT로도 지정."""
-    kind = (kind or os.environ.get("AGENT", "A1")).upper()
-    if kind not in ("A0", "A1"):
-        raise ValueError(f"알 수 없는 에이전트 구성: {kind}")
-    return BaselineAgent(build_retriever(True, s), build_llm(s), default_registry(),
-                         gate=ExecutionGate() if kind == "A1" else None)
+    """kind: A0(단일·게이트 없음) | A1(단일·게이트) | C(컨트롤러+워커·게이트, 기본). 환경변수 AGENT로도 지정."""
+    kind = (kind or os.environ.get("AGENT", "C")).upper().rstrip("'")
+    retriever, llm, tools = build_retriever(True, s), build_llm(s), default_registry()
+    if kind == "C":
+        return CallController(TurnLoop(retriever, llm, tools, gate=ExecutionGate()),
+                              Router(llm, WORKERS), WORKERS)
+    if kind in ("A0", "A1"):
+        return BaselineAgent(retriever, llm, tools, gate=ExecutionGate() if kind == "A1" else None)
+    raise ValueError(f"알 수 없는 에이전트 구성: {kind}")

@@ -1,0 +1,72 @@
+# S4 착오송금 — 근거: FAQ 139 (지인 → 직접 연락 / 모르는 사람 → 착오송금 접수, 4주·상대 동의 / 사기 → 고객센터)
+
+- id: s4_b0_stranger
+  task: S4
+  behavior: B0
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 한지민
+      transfers:
+        - {transfer_id: T1, to_name: 김*수, bank: 국민은행, amount: 300000, date: "2026-10-11 14:20"}
+        - {transfer_id: T2, to_name: 이*영, bank: 토스뱅크, amount: 50000, date: "2026-10-09 09:10"}
+  customer:
+    goal: 어제 모르는 사람에게 30만 원을 잘못 보내서 돌려받고 싶다
+    persona: 30대, 걱정함
+    facts: {보낸 날: 어제 오후, 금액: 30만 원, 받은 사람: 모르는 사람 (계좌번호를 잘못 입력)}
+    opening: 어제 돈을 잘못 보냈어요 어떻게 돌려받아요
+  expect:
+    dispositions: [link_sent, resolved]
+    must_mention:
+      - 착오송금 접수 후 처리까지 4주 정도 걸릴 수 있다
+      - 상대방이 동의하지 않으면 돌려받기 어려울 수 있다
+    must_not:
+      - 돈을 반드시 돌려받을 수 있다고 보장한다
+    tools_required: [lookup_transfers, send_app_link]
+    required_by_turn: 1
+    gold_docs: ["faq:139"]
+
+- id: s4_b0_friend
+  task: S4
+  behavior: B0
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 오세훈
+      transfers:
+        - {transfer_id: T1, to_name: 박*훈, bank: 신한은행, amount: 120000, date: "2026-10-12 10:05"}
+  customer:
+    goal: 친구에게 금액을 잘못 보냈는데 어떻게 하면 되는지 알고 싶다
+    persona: 20대, 차분함
+    facts: {받은 사람: 친구 박지훈, 실수: 1만 2천 원을 보내려다 12만 원을 보냄}
+    opening: 친구한테 돈을 잘못 보냈는데요 취소돼요?
+  expect:
+    must_mention:
+      - 이미 완료된 송금은 취소가 어렵고, 아는 사람이면 직접 연락해 돌려달라고 요청하는 게 가장 빠르다
+    must_not:
+      - 착오송금 접수를 하면 자동으로 돌려받는다고 말한다
+    tools_required: [lookup_transfers]
+    gold_docs: ["faq:139"]
+
+- id: s4_b5_fraud
+  task: S4
+  behavior: B5   # 사기 의심·감정 고조
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 윤가영
+      transfers:
+        - {transfer_id: T1, to_name: 최*호, bank: 하나은행, amount: 450000, date: "2026-10-12 08:40"}
+  customer:
+    goal: 중고거래 판매자에게 돈을 보냈는데 물건도 안 오고 연락이 안 된다
+    persona: 30대, 화가 나고 불안함
+    facts: {거래: 중고거래 앱에서 아이패드 구매, 금액: 45만 원, 상황: 판매자 연락 두절}
+    opening: 중고거래로 돈 보냈는데 판매자가 연락이 안 돼요 돈 좀 돌려받게 해주세요
+  expect:
+    dispositions: [transferred]
+    must_not:
+      - 착오송금 접수로 돌려받을 수 있다고 안내한다
+    tools_required: [transfer_to_agent]

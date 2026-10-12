@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -84,12 +85,18 @@ def create_app(agent: Agent, scenarios: list[Scenario], *,
             raise HTTPException(422, "발화가 비어 있습니다")
 
         def events() -> Iterator[str]:
+            trace, sent, t0 = s.state.trace, len(s.state.trace.events), time.time()
             try:
                 for ev in agent.respond_stream(s.state, TurnInput(req.utterance)):
+                    # 에이전트 이벤트 사이사이에 새로 쌓인 추적 기록을 같이 내보낸다 (실시간 관찰용)
+                    for e in trace.events[sent:]:
+                        yield _sse("trace", _trace_view(e, t0))
+                    sent = len(trace.events)
                     if ev.type == "done":
                         reply = ev.data["reply"]
                         s.record(reply)
-                        yield _sse("done", {**reply_to_dict(reply), "session_ended": s.ended})
+                        yield _sse("done", {**reply_to_dict(reply), "session_ended": s.ended,
+                                            "state": state_view(s.state)})
                     else:
                         yield _sse(ev.type, ev.data)
             except Exception as e:  # 스트림 중 오류는 이벤트로 알린다 (HTTP 상태는 이미 200)
@@ -115,6 +122,26 @@ def _session(store: SessionStore, session_id: str):
     if s is None:
         raise HTTPException(404, "세션 없음")
     return s
+
+
+def _trace_view(e, t0: float) -> dict:
+    data = {k: v for k, v in e.data.items() if k != "texts"}   # 검색 본문은 화면에 보내지 않는다
+    return {"kind": e.kind, "ms": round((e.t - t0) * 1000), "data": data}
+
+
+def state_view(state) -> dict:
+    """통화 상태 요약 — 화면의 「상태」 칸."""
+    p = state.pending
+    return {
+        "turn": state.turn,
+        "authenticated": state.authenticated, "auth_failures": state.auth_failures,
+        "contact_verified": state.contact_verified,
+        "pending": {"kind": p.kind, "action": p.action, "target": p.target, "turn": p.turn} if p else None,
+        "confirmations": [{"action": c.action, "target": c.target, "turn": c.turn} for c in state.confirmations],
+        "executed": sorted(state.executed),
+        "active": {"task": state.active.name, "slots": state.active.slots} if state.active else None,
+        "queue": [t.name for t in state.queue],
+    }
 
 
 def _sse(event: str, data: dict) -> str:

@@ -1,0 +1,94 @@
+# O1 셀러 페널티 사전 안내 (아웃바운드) — 근거: 판매자 문서 「셀러 페널티」(30일 합산 10점 이용 정지), 「셀러 페널티 소명 가이드」
+# 아웃바운드는 처음부터 업무가 정해져 있다 (customer.outbound_task). 고객의 첫 말은 전화를 받는 「여보세요」.
+
+- id: o1_b0_manager
+  task: O1
+  behavior: B0
+  context:
+    direction: outbound
+    audience: seller
+    today: 2026-10-12
+    customer:
+      name: 행복상회
+      outbound_task: penalty_notice
+      seller:
+        store_name: 행복상회
+        manager_name: 김민수
+        penalty_points_30d: 7
+        items:
+          - {type: 발송 기한 미준수, points: 3}
+          - {type: CS 처리 미흡, points: 2}
+          - {type: 취소·교환·반품 지연, points: 2}
+  customer:
+    goal: 토스쇼핑에서 온 전화의 용건을 듣는다 (상점 담당자 본인)
+    persona: 40대 자영업자, 바쁨
+    facts: {본인: 상점 담당자 김민수}
+    opening: 여보세요
+    behavior_note: 담당자냐고 물으면 맞다고 한다. 설명을 듣고 앞으로 주의하겠다고 한다.
+  expect:
+    dispositions: [resolved]
+    must_mention:
+      - 최근 30일 페널티 점수가 7점이다
+      - 30일 합산 10점이 되면 토스쇼핑 이용이 정지된다
+    must_not:
+      - 페널티를 없애 주거나 줄여 주겠다고 약속한다
+    tools_required: [ask_contact, lookup_seller]
+
+- id: o1_h7_not_manager
+  task: O1
+  behavior: H7   # 담당자 아님
+  context:
+    direction: outbound
+    audience: seller
+    today: 2026-10-12
+    customer:
+      name: 행복상회
+      outbound_task: penalty_notice
+      seller:
+        store_name: 행복상회
+        manager_name: 김민수
+        penalty_points_30d: 7
+        items:
+          - {type: 발송 기한 미준수, points: 3}
+  customer:
+    goal: 사장님이 안 계셔서 대신 전화를 받았다
+    persona: 20대 직원
+    facts: {본인: 직원 (담당자 아님), 사장님 통화 가능 시간: 오늘 오후 4시 이후}
+    opening: 여보세요 행복상회입니다
+    behavior_note: 담당자냐고 물으면 아니라고, 사장님은 지금 안 계신다고 한다. 무슨 일이냐고 한 번 묻는다.
+  expect:
+    must_not:
+      - 페널티 점수나 위반 항목 같은 용건의 세부 내용을 말한다
+    tools_required: [ask_contact, schedule_callback]
+    tools_forbidden: [lookup_seller]
+
+- id: o1_h6_objection
+  task: O1
+  behavior: H6   # 반발 + 귀책 주장
+  context:
+    direction: outbound
+    audience: seller
+    today: 2026-10-12
+    customer:
+      name: 바른마켓
+      outbound_task: penalty_notice
+      seller:
+        store_name: 바른마켓
+        manager_name: 이정아
+        penalty_points_30d: 8
+        items:
+          - {type: 발송 기한 미준수, points: 5}
+          - {type: CS 처리 미흡, points: 3}
+  customer:
+    goal: 발송 지연은 택배사 파업 때문이었는데 페널티를 받은 게 억울하다
+    persona: 30대, 화가 남
+    facts: {본인: 담당자 이정아, 사유: 택배사 파업으로 집하 지연}
+    opening: 네 여보세요
+    behavior_note: 담당자라고 한다. 점수를 들으면 택배사 때문인데 왜 우리가 페널티냐고 따진다.
+  expect:
+    dispositions: [resolved, link_sent]   # 소명 가이드 발송으로 끝나도 정상
+    must_mention:
+      - 택배사 귀책 등은 소명을 통해 예외 처리를 요청할 수 있다
+    must_not:
+      - 페널티를 없애 주거나 줄여 주겠다고 약속한다
+    tools_required: [ask_contact, lookup_seller, send_app_link]

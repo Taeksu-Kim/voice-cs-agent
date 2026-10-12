@@ -26,6 +26,7 @@ async function startCall() {
   state.turnNo = 0;
   $("chat").innerHTML = "";
   $("turns").innerHTML = "";
+  $("callstate").innerHTML = "";
   const orders = (data.customer.orders || [])
     .map((o) => `<li>${esc(o.item)} — ${esc(o.status)}${o.eta ? ` (예정 ${o.eta})` : ""}</li>`).join("");
   $("customer").innerHTML =
@@ -63,10 +64,11 @@ async function sendTurn(text) {
         firstDeltaMs ??= performance.now() - t0;
         bubble.firstChild.textContent += data.text;
         scrollChat();
-      } else if (event === "retrieval") renderRetrieval(card, data);
-      else if (event === "tool_call") renderTool(card, data, "호출");
-      else if (event === "tool_result") renderTool(card, data, "결과");
-      else if (event === "done") finishTurn(bubble, card, data, firstDeltaMs);
+      } else if (event === "task") renderTask(card, data);
+      else if (event === "retrieval") renderRetrieval(card, data);
+      else if (event === "step") setStatus(`${data.worker} · LLM 생성 중 (스텝 ${data.step})`);
+      else if (event === "trace") renderTrace(card, data);
+      else if (event === "done") { finishTurn(bubble, card, data, firstDeltaMs); renderState(data.state); }
       else if (event === "error") throw new Error(data.message);
     }
   } catch (e) {
@@ -150,11 +152,64 @@ function addTurnCard(no, text) {
   return card;
 }
 
+function renderTask(card, data) {
+  const label = data.attempt ? `업무 전환 → <b>${esc(data.task)}</b>` : `업무: <b>${esc(data.task)}</b>`;
+  card.insertAdjacentHTML("beforeend", `<div class="label">${label}</div>`);
+}
+
 function renderRetrieval(card, data) {
   const items = data.docs.map((d) =>
     `<li>${d.score.toFixed(3)} · ${esc(d.title)}${d.section ? ` <span class="label">› ${esc(d.section)}</span>` : ""}</li>`).join("");
   card.insertAdjacentHTML("beforeend", `<div><span class="label">검색 ${data.ms}ms</span><ul>${items}</ul></div>`);
 }
+
+// 추적 기록 한 줄 — 에이전트가 이번 턴에 무엇을 했는지 시간순으로
+const TRACE = {
+  route: (d) => ["🧭", `라우팅 → <b>${esc(d.task)}</b>`, d.reason],
+  task_start: (d) => ["▶", `업무 시작 <b>${esc(d.task)}</b>`],
+  task_done: (d) => ["✔", `업무 완료 <b>${esc(d.task)}</b>`],
+  retrieval: (d) => ["🔎", `검색 (${esc(d.worker)}) ${d.chunk_ids.length}건`],
+  llm: (d) => ["🤖", `LLM ${esc(d.role)} ${d.ms}ms`, `토큰 ${d.prompt_tokens}+${d.completion_tokens}`],
+  intent: (d) => ["↪", `업무 전환 요청 (${esc(d.worker)})`],
+  step_enforced: (d) => ["⛔", `절차 강제: 먼저 <b>${esc(d.tool)}</b>`, "", "warn"],
+  pending: (d) => ["❓", `질문 걸어 둠: ${d.kind === "confirm" ? "실행 재확인" : "담당자 확인"} ${esc(d.action)}`, json(d.target)],
+  pending_answer: (d) => [d.verified ? "✅" : "⚠", `고객 답 판정 <b>${esc(d.answer)}</b> ${d.verified ? "(확정)" : "(미확정)"}`,
+    `인용: "${esc(d.quote)}"`, d.verified ? "ok" : "warn"],
+  tool_request: (d) => ["🛠", `도구 요청 <b>${esc(d.name)}</b>`, json(d.args)],
+  gate: (d) => d.allowed ? null : ["🚫", `게이트 차단 <b>${esc(d.name)}</b>`, esc(d.reason), "err"],
+  tool_result: (d) => d.ok ? ["✓", `결과 ${esc(d.name)}`, json(omit(d, ["name", "risk", "ok"]))]
+                           : ["✗", `실패 ${esc(d.name)}`, esc(d.error || ""), "err"],
+};
+
+function renderTrace(card, ev) {
+  const fmt = TRACE[ev.kind];
+  const row = fmt && fmt(ev.data);
+  if (!row) return;
+  const [icon, title, detail = "", cls = ""] = row;
+  let list = card.querySelector("ol.trace");
+  if (!list) { list = document.createElement("ol"); list.className = "trace"; card.appendChild(list); }
+  list.insertAdjacentHTML("beforeend", `<li class="${cls}"><span class="t">+${ev.ms}ms</span>
+    <span class="i">${icon}</span><span>${title}${detail ? `<div class="d">${detail}</div>` : ""}</span></li>`);
+}
+
+function renderState(st) {
+  if (!st) return;
+  const yes = (b) => b ? '<span class="ok">✓</span>' : '<span class="muted">-</span>';
+  const rows = [
+    ["업무", st.active ? `<b>${esc(st.active.task)}</b> ${json(st.active.slots)}` : "-"],
+    ["대기열", st.queue.length ? esc(st.queue.join(", ")) : "-"],
+    ["본인 인증", `${yes(st.authenticated)}${st.auth_failures ? ` 실패 ${st.auth_failures}회` : ""}`],
+    ["담당자 확인", yes(st.contact_verified)],
+    ["걸린 질문", st.pending ? `${esc(st.pending.action || st.pending.kind)} ${json(st.pending.target)} (턴 ${st.pending.turn})` : "-"],
+    ["동의 받음", st.confirmations.map((c) => `${esc(c.action)} ${json(c.target)}`).join("<br>") || "-"],
+    ["실행됨", st.executed.map(esc).join("<br>") || "-"],
+  ];
+  $("callstate").innerHTML = `<h3>통화 상태 · 턴 ${st.turn}</h3><table>${
+    rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>`;
+}
+
+function json(o) { return o && Object.keys(o).length ? `<code>${esc(JSON.stringify(o))}</code>` : ""; }
+function omit(o, keys) { return Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k))); }
 
 function renderTool(card, data, kind) {
   const body = kind === "호출" ? data.args : data.result;

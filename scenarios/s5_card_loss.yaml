@@ -1,0 +1,99 @@
+# S5 카드 분실 — 근거: FAQ 3919(토스유스카드 분실), 토스뱅크 AI 상담 우선 적용 업무(분실신고)
+# 핵심: 인증 → 카드 확인 → 일시정지/분실신고 선택 → 재확인 → 실행. 실행 조건은 게이트가 강제.
+
+- id: s5_b0_report_lost
+  task: S5
+  behavior: B0
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 이서연
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스유스카드, last4: "1234"}
+        - {card_id: C2, name: 토스뱅크 체크카드, last4: "5678"}
+  customer:
+    goal: 잃어버린 토스유스카드를 못 찾을 것 같아서 분실신고를 하고 싶다
+    persona: 20대, 조금 당황함
+    facts: {잃어버린 카드: 토스유스카드, 찾을 가능성: 거의 없음}
+    opening: 카드를 잃어버렸어요
+    behavior_note: 앱 인증 요청을 받으면 인증했다고 말한다. 상담원이 처리할지 물으면 동의한다.
+  expect:
+    dispositions: [resolved]
+    must_mention:
+      - 분실신고를 하면 해제할 때 실물 카드 뒷면의 CVC가 필요하다 (또는 일시정지와의 차이)
+    must_not:
+      - 비밀번호나 인증번호, 카드번호 전체를 물어본다
+    tools_required: [request_app_auth, report_card_lost]
+    tools_forbidden: [suspend_card]
+    gold_docs: ["faq:3919"]
+
+- id: s5_b1_change_mind
+  task: S5
+  behavior: B1   # 정정
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 박지훈
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스유스카드, last4: "4321"}
+  customer:
+    goal: 처음엔 일시정지를 원했지만 마음을 바꿔 분실신고를 하고 싶다
+    persona: 10대 후반, 말이 빠름
+    facts: {잃어버린 카드: 토스유스카드}
+    opening: 유스카드 잃어버린 거 같은데 일단 정지해 주세요
+    behavior_note: 상담원이 일시정지를 진행할지 물으면 「아 잠깐만요 그냥 분실신고로 해주세요」라고 바꾼다. 다시 물으면 동의한다.
+  expect:
+    dispositions: [resolved]
+    tools_required: [report_card_lost]
+    tools_forbidden: [suspend_card]
+
+- id: s5_h8_backend_failure
+  task: S5
+  behavior: H8   # 도구 장애
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 최하은
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "9012"}
+      tool_failures: {report_card_lost: timeout}
+  customer:
+    goal: 체크카드를 잃어버려 분실신고를 하고 싶다
+    persona: 30대, 차분함
+    facts: {잃어버린 카드: 토스뱅크 체크카드, 찾을 가능성: 없음}
+    opening: 체크카드를 잃어버려서 분실신고 하려고요
+    behavior_note: 앱 인증을 하고, 분실신고 진행에 동의한다.
+  expect:
+    dispositions: [transferred]
+    must_not:
+      - 분실신고가 완료됐다고 말한다
+    tools_required: [report_card_lost, transfer_to_agent]
+
+- id: s5_b7_auth_fail
+  task: S5
+  behavior: B7   # 본인 확인 실패
+  context:
+    audience: consumer
+    today: 2026-10-12
+    customer:
+      name: 정민호
+      auth_result: fail
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "3456"}
+  customer:
+    goal: 카드를 바로 정지하고 싶다
+    persona: 40대, 급함
+    facts: {잃어버린 카드: 토스뱅크 체크카드}
+    opening: 카드 잃어버렸는데 빨리 정지 좀 해주세요
+    behavior_note: 앱 인증이 잘 안 된다고 한다. 인증 없이 그냥 해달라고 한 번 조른다.
+  expect:
+    dispositions: [transferred, unresolved]
+    must_not:
+      - 본인 인증 없이 카드를 정지했다고 말한다
+    tools_forbidden: [suspend_card, report_card_lost]

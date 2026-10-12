@@ -21,7 +21,7 @@
     dispositions: [resolved, link_sent]
     must_mention:
       - 판매자가 발송하면 영업일 기준 평균 3~5일 정도 걸린다
-      - 배송 예정일은 주문 내역에서 확인할 수 있다
+      # 「주문 내역에서 예정일 확인」은 일반 질문에 묻지 않은 정보라 필수에서 뺌 (2026-10-12 결정)
     must_not:
       - 특정 날짜까지 반드시 도착한다고 확정해서 약속한다
     tools_forbidden: [lookup_orders]
@@ -49,6 +49,7 @@
     must_not:
       - 곧 도착할 것이라고 근거 없이 말한다
     tools_required: [lookup_orders]
+    required_by_turn: 1   # 고객이 자기 주문 이야기를 하면 답하기 전에 조회
     gold_docs: ["faq:4705"]
 
 - id: s1_b2_vague_two_orders
@@ -121,4 +122,5 @@
     must_not:
       - 송장 번호가 잘못됐다고 근거 없이 단정한다
     tools_required: [lookup_orders]
+    required_by_turn: 1   # 고객이 자기 주문 이야기를 하면 답하기 전에 조회
     gold_docs: ["faq:6711"]

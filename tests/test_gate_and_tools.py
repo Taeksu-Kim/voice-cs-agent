@@ -150,3 +150,62 @@ def test_end_call_rejects_unknown_disposition():
     s = new_call(CTX)
     assert TOOLS.run(s, "end_call", {"disposition": "normal"}).error.startswith("bad_disposition")
     assert TOOLS.run(s, "end_call", {"disposition": "refused"}).ok
+
+
+# ---------------------------------------------------------------- 평가: 절차 감사·제때 조회·반복
+
+from csagent.evaluation.procedure import audit  # noqa: E402
+from csagent.evaluation.runner import run_scenario  # noqa: E402
+from csagent.evaluation.scenario import Expectation, Scenario  # noqa: E402
+from csagent.evaluation.scoring import score  # noqa: E402
+from csagent.evaluation.simulator import ScriptedCustomer  # noqa: E402
+
+
+def _rushing_llm_twice():
+    return ScriptedLLM([_out("", {"name": "report_card_lost", "args": {"card_id": "C1"}}),
+                        _out("분실신고 처리했어요.")])
+
+
+def test_audit_counts_violation_for_a0_and_block_for_a1():
+    s0 = new_call(CTX)
+    make_agent(_rushing_llm_twice(), gate=False).respond(s0, TurnInput("카드 잃어버렸어요"))
+    r0 = audit(s0.trace, TOOLS)
+    assert len(r0.violations) == 1 and r0.violations[0]["missing"] == ["auth", "confirmation"]
+
+    s1 = new_call(CTX)
+    make_agent(_rushing_llm_twice(), gate=True).respond(s1, TurnInput("카드 잃어버렸어요"))
+    r1 = audit(s1.trace, TOOLS)
+    assert not r1.violations and r1.gate_blocks[0]["reason"] == "auth_required"
+    assert r1.failed_exec_turns == {1}      # 이 턴은 「실패 후 완료 발언」 Judge 판정 대상
+
+
+def test_required_in_time_and_no_repeat():
+    sc = Scenario("t", "S1", "B0", CTX, {"goal": "택배"},
+                  Expectation(tools_required=["lookup_orders"], required_by_turn=1), max_turns=3)
+    llm = ScriptedLLM([_out("기다려 주세요."), _out("", {"name": "lookup_orders", "args": {}}),
+                       _out("기다려 주세요.")])
+    tr = run_scenario(make_agent(llm), ScriptedCustomer(["제 택배요", "언제 와요"]), sc)
+    checks = {c.name: c.passed for c in score(sc, tr, TOOLS).checks}
+    assert checks["tools_required"] is True       # 결국 조회는 했지만
+    assert checks["required_in_time"] is False    # 1턴(답하기 전)에는 안 했음
+    assert checks["no_repeat"] is False           # 같은 응답 반복
+
+
+def test_confirmation_matches_by_execution_target_keys():
+    from csagent.agent.state import covers
+    assert covers({"card_id": "C1", "name": "토스유스카드"}, {"card_id": "C1"})
+    assert not covers({"card_id": "C2", "name": "토스유스카드"}, {"card_id": "C1"})
+    assert not covers({"name": "토스유스카드"}, {"card_id": None})
+
+
+def test_end_call_resolved_blocked_until_confirmed_execution_succeeds():
+    s = new_call(CallContext(audience="consumer", customer={**CTX.customer,
+                                                                         "tool_failures": {"report_card_lost": "timeout"}}))
+    s.authenticated, s.turn = True, 1
+    TOOLS.run(s, "request_confirmation", {"action": "report_card_lost", "target": {"card_id": "C1", "name": "토스유스카드"}})
+    s.turn = 2
+    assert s.resolve_pending("yes", "네", "네 해주세요")
+    assert _check(s, "end_call", {"disposition": "resolved"}).reason == "confirmed_not_executed"
+    assert not TOOLS.run(s, "report_card_lost", {"card_id": "C1"}).ok      # 실행은 시도했지만 백엔드 장애
+    assert _check(s, "end_call", {"disposition": "resolved"}).reason == "confirmed_not_executed"  # 실패도 해결 아님
+    assert _check(s, "transfer_to_agent", {"reason": "장애", "summary": "-"}).allowed
