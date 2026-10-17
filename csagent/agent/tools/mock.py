@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from csagent.agent.state import CallState
@@ -26,9 +25,15 @@ def _customer(state: CallState, key: str, default: Any = None) -> Any:
 
 # ---------------------------------------------------------------- 조회 (read)
 
-def lookup_orders(state: CallState) -> dict:
+def lookup_orders(state: CallState, order_id: str = "") -> dict:
+    """order_id가 있으면 그 건만. 본인 명의로 등록된 번호가 아니면 빈 목록 + not_found (다른 주문으로 대신 답하지 않게)."""
     _fail_if_injected(state, "lookup_orders")
-    return {"today": state.ctx.today, "orders": _customer(state, "orders")}
+    orders = _customer(state, "orders")
+    key = "".join(str(order_id or "").split()).upper()
+    if not key:
+        return {"today": state.ctx.today, "orders": orders}
+    hit = [o for o in orders if str(o.get("order_id", "")).upper() == key]
+    return {"today": state.ctx.today, "orders": hit, **({} if hit else {"not_found": key})}
 
 
 def lookup_transfers(state: CallState) -> dict:
@@ -58,35 +63,6 @@ def request_app_auth(state: CallState) -> dict:
     return {"status": "failed", "failures": state.auth_failures}
 
 
-def request_confirmation(state: CallState, action: str, target) -> dict:
-    """실행 전 고객 재확인을 건다. 고객의 답은 다음 턴에 LLM이 판정하고 코드가 인용을 대조해 확정한다."""
-    target = _as_target(target)
-    if target is None:
-        return {"error": "target은 객체여야 함 (예: {\"card_id\": \"C1\"})"}
-    if state.is_confirmed(action, target):
-        return {"status": "already_confirmed", "note": "이미 고객이 동의했습니다. 다시 묻지 말고 실행하세요."}
-    p = state.pending
-    if p and p.kind == "confirm" and p.action == action and p.target == target:
-        # 같은 확인을 다시 걸면 원래 질문 턴을 유지한다 (다음 턴 판정이 유효하도록)
-        return {"status": "pending", "action": action, "target": target, "note": "이미 같은 확인을 걸어 두었습니다."}
-    state.ask("confirm", action, target)
-    return {"status": "pending", "action": action, "target": target,
-            "note": "고객에게 실행 내용을 말하고 진행 여부를 물어보세요. 답은 다음 턴에 확인됩니다."}
-
-
-def _as_target(target):
-    """LLM이 대상 객체를 JSON 문자열로 넣는 경우가 있다 → 객체로 해석 (형식 변환, 의미 판단 아님)."""
-    if isinstance(target, dict):
-        return target
-    if isinstance(target, str):
-        try:
-            value = json.loads(target)
-            return value if isinstance(value, dict) else None
-        except json.JSONDecodeError:
-            return None
-    return None
-
-
 def ask_contact(state: CallState) -> dict:
     """아웃바운드: 통화 상대가 담당자인지 묻는다. 확정은 다음 턴 고객 발화 판정으로."""
     if state.contact_verified:
@@ -101,11 +77,19 @@ def _card(state: CallState, card_id: str) -> dict:
     return next((c for c in _customer(state, "cards") if c["card_id"] == card_id), None)
 
 
+def _known_card(state: CallState, args: dict) -> str | None:
+    """card_id가 조회된 카드 ID인가 (값 대조). 이름·끝 4자리를 넣으면 고객에게 묻기 전에 돌려보낸다."""
+    ids = [c["card_id"] for c in _customer(state, "cards")]
+    if args.get("card_id") not in ids:
+        return f"card_id는 lookup_cards 결과의 card_id 중 하나여야 합니다 (받은 값: {args.get('card_id')}, 가능: {', '.join(ids)})"
+    return None
+
+
 def suspend_card(state: CallState, card_id: str) -> dict:
     _fail_if_injected(state, "suspend_card")
     card = _card(state, card_id)
     if card is None:
-        return {"error": f"unknown_card:{card_id}"}
+        return {"error": f"unknown_card:{card_id} (조회된 card_id: {', '.join(c['card_id'] for c in _customer(state, 'cards'))})"}
     card["status"] = "일시정지"
     return {"status": "suspended", "card_id": card_id}
 
@@ -114,7 +98,7 @@ def report_card_lost(state: CallState, card_id: str) -> dict:
     _fail_if_injected(state, "report_card_lost")
     card = _card(state, card_id)
     if card is None:
-        return {"error": f"unknown_card:{card_id}"}
+        return {"error": f"unknown_card:{card_id} (조회된 card_id: {', '.join(c['card_id'] for c in _customer(state, 'cards'))})"}
     card["status"] = "분실신고"
     return {"status": "reported_lost", "card_id": card_id}
 
@@ -152,24 +136,24 @@ def end_call(state: CallState, disposition: str = "resolved") -> dict:
 
 def default_registry() -> ToolRegistry:
     return ToolRegistry([
-        ToolSpec("lookup_orders", "통화 중인 본인의 토스쇼핑 주문·배송 상태 조회 (다른 사람 주문은 조회 불가)",
-                 fn=lookup_orders),
+        ToolSpec("lookup_orders", "통화 중인 본인의 토스쇼핑 주문·배송 상태 조회 (다른 사람 주문은 조회 불가). "
+                 "order_id를 주면 그 주문만, 비우면 본인 주문 전체",
+                 {"order_id": "고객이 말한 주문번호 (말하지 않았으면 비움)"}, fn=lookup_orders),
         ToolSpec("lookup_transfers", "본인의 최근 송금 내역 조회", fn=lookup_transfers),
         ToolSpec("lookup_cards", "본인 카드 목록 조회 (카드 이름·끝 4자리·상태)", fn=lookup_cards),
         ToolSpec("lookup_seller", "통화 상대 셀러의 상점 정보·페널티·광고 이용 조회", requires_contact=True,
                  fn=lookup_seller),
         ToolSpec("request_app_auth", "고객 휴대폰으로 앱 본인 인증 요청 (결과가 바로 돌아옴)", risk="notify",
                  fn=request_app_auth),
-        ToolSpec("request_confirmation", "실행 도구를 쓰기 전 고객 재확인을 건다. 고객의 답은 다음 턴에 확인됨",
-                 {"action": "실행할 도구 이름", "target": "실행 도구에 넣을 인자와 같은 JSON 객체 — 문자열 아님 (예: {\"card_id\": \"C1\"})"},
-                 risk="notify", asks_customer=True, fn=request_confirmation),
         ToolSpec("ask_contact", "아웃바운드: 통화 상대가 담당자인지 확인 질문을 건다", risk="notify",
                  asks_customer=True, fn=ask_contact),
-        ToolSpec("suspend_card", "카드 일시정지 (토스 비밀번호로 해제 가능)", {"card_id": "카드 ID"},
+        ToolSpec("suspend_card", "카드 일시정지 (토스 비밀번호로 해제 가능)", {"card_id": "lookup_cards 결과의 card_id (예: C1)"},
                  risk="execute", requires_auth=True, requires_confirmation=True, target_keys=("card_id",),
+                 precheck=_known_card,
                  fn=suspend_card),
-        ToolSpec("report_card_lost", "카드 분실신고 (해제하려면 실물 카드 CVC 필요)", {"card_id": "카드 ID"},
+        ToolSpec("report_card_lost", "카드 분실신고 (해제하려면 실물 카드 CVC 필요)", {"card_id": "lookup_cards 결과의 card_id (예: C1)"},
                  risk="execute", requires_auth=True, requires_confirmation=True, target_keys=("card_id",),
+                 precheck=_known_card,
                  fn=report_card_lost),
         ToolSpec("send_app_link", "고객 휴대폰으로 토스 앱 화면 링크 문자 발송", {"target": "화면 이름 (예: 주문 내역)"},
                  risk="notify", fn=send_app_link),
@@ -179,6 +163,6 @@ def default_registry() -> ToolRegistry:
                  risk="notify", requires_contact=True, fn=record_lead),
         ToolSpec("transfer_to_agent", "사람 상담원 연결 (요약을 함께 넘김)", {"reason": "사유", "summary": "통화 요약"},
                  risk="handoff", fn=transfer_to_agent),
-        ToolSpec("end_call", "통화 종료", {"disposition": "resolved|link_sent|transferred|refused|unresolved"},
+        ToolSpec("end_call", "통화 종료", {"disposition": "통화 결과"}, choices={"disposition": DISPOSITIONS},
                  risk="handoff", fn=end_call),
     ])

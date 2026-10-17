@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
@@ -18,13 +19,20 @@ from csagent.agent.trace import Trace
 PendingKind = Literal["confirm", "contact"]
 
 
+def covers(asked: dict[str, Any], target: dict[str, Any]) -> bool:
+    """확인받은 대상이 실행 대상의 키·값을 모두 포함하나 (확인 때 카드 이름 같은 설명 키가 더 붙어도 된다)."""
+    return bool(target) and all(v is not None and asked.get(k) == v for k, v in target.items())
+
+
 @dataclass
 class Pending:
     """고객의 예/아니오를 기다리는 질문."""
     kind: PendingKind
     turn: int
-    action: str = ""                      # confirm: 실행하려는 도구
-    target: dict[str, Any] = field(default_factory=dict)
+    items: list[tuple[str, dict[str, Any]]] = field(default_factory=list)  # confirm: (실행 도구, 대상) — 여럿을 한 번에 묻는다
+
+    def has(self, action: str, target: dict[str, Any]) -> bool:
+        return any(a == action and covers(t, target) for a, t in self.items)
 
 
 @dataclass
@@ -32,11 +40,6 @@ class Confirmation:
     action: str
     target: dict[str, Any]
     turn: int
-
-
-def covers(asked: dict[str, Any], target: dict[str, Any]) -> bool:
-    """확인받은 대상이 실행 대상의 키·값을 모두 포함하나 (확인 때 카드 이름 같은 설명 키가 더 붙어도 된다)."""
-    return bool(target) and all(v is not None and asked.get(k) == v for k, v in target.items())
 
 
 @dataclass
@@ -47,11 +50,14 @@ class TaskState:
     slots: dict[str, Any] = field(default_factory=dict)
     done: bool = False
     tools_done: set[str] = field(default_factory=set)   # 이 업무에서 성공한 도구 (절차 강제용)
+    tools_empty: set[str] = field(default_factory=set)  # 마지막 결과의 목록이 전부 비었던 조회 도구 (예: 카드 0장)
+    started: bool = False                                # 워커가 맡은 적이 있나 (대기열의 미착수 용건 구분)
 
 
 @dataclass
 class CallState:
     ctx: CallContext
+    call_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])   # 로그·trace·LLM 기록을 통화 단위로 묶는 id
     history: list[tuple[str, str]] = field(default_factory=list)   # [("customer"|"agent", 발화)]
     turn: int = 0
     # 실행 안전 상태
@@ -65,13 +71,28 @@ class CallState:
     # 업무 진행 (C')
     active: Optional[TaskState] = None
     queue: list[TaskState] = field(default_factory=list)
+    end_blocked_turn: Optional[int] = None   # 미착수 용건 때문에 종료를 막은 턴 (한 번만 막는다)
+    acted_turn: Optional[int] = None      # 실행·발송 도구가 마지막으로 성공한 턴 (그 턴엔 결과를 알리고 끊지 않는다)
     trace: Trace = field(default_factory=Trace)
 
     # -- 재확인 --
 
-    def ask(self, kind: PendingKind, action: str = "", target: Optional[dict] = None) -> None:
-        self.pending = Pending(kind, self.turn, action, dict(target or {}))
-        self.trace.add(self.turn, "pending", {"kind": kind, "action": action, "target": target or {}})
+    def ask(self, kind: PendingKind) -> None:
+        """담당자 확인 같은 예/아니오 질문을 건다."""
+        self.pending = Pending(kind, self.turn)
+        self.trace.add(self.turn, "pending", {"kind": kind})
+
+    def ask_confirm(self, action: str, target: dict[str, Any]) -> str:
+        """실행 전 확인 질문에 대상을 건다. 같은 턴에 여러 대상을 걸면 한 질문으로 묶인다.
+        반환: "asked"(이번 턴에 걺) | "waiting"(이전 턴에 걸어 두고 답을 기다리는 중)."""
+        p = self.pending
+        if p and p.kind == "confirm" and p.has(action, target):
+            return "waiting" if p.turn < self.turn else "asked"
+        if not (p and p.kind == "confirm" and p.turn == self.turn):
+            p = self.pending = Pending("confirm", self.turn)
+        p.items.append((action, dict(target)))
+        self.trace.add(self.turn, "pending", {"kind": "confirm", "action": action, "target": target})
+        return "asked"
 
     def resolve_pending(self, answer: str, quote: str, utterance: str) -> bool:
         """LLM이 판정한 고객 답으로 걸어 둔 질문을 확정한다. 확정했으면 True.
@@ -84,12 +105,12 @@ class CallState:
         verified = bool(p and p.turn < self.turn and answer in ("yes", "no")
                         and quote.strip() and quote.strip() in utterance)
         self.trace.add(self.turn, "pending_answer", {
-            "kind": p.kind if p else None, "action": p.action if p else "", "answer": answer,
+            "kind": p.kind if p else None, "items": [a for a, _ in p.items] if p else [], "answer": answer,
             "quote": quote, "verified": verified})
         if not verified:
             return False
         if answer == "yes" and p.kind == "confirm":
-            self.confirmations.append(Confirmation(p.action, p.target, self.turn))
+            self.confirmations += [Confirmation(a, t, self.turn) for a, t in p.items]
         elif answer == "yes" and p.kind == "contact":
             self.contact_verified = True
         self.pending = None

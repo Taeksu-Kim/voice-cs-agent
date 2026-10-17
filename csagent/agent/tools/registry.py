@@ -32,13 +32,15 @@ class ToolSpec:
     requires_contact: bool = False                          # 아웃바운드: 담당자 확인 후에만
     target_keys: tuple[str, ...] = ()                       # 재확인·중복 판정에 쓰는 인자
     asks_customer: bool = False                             # 고객에게 질문을 거는 도구 → 이 스텝의 말로 턴을 끝낸다
+    choices: dict[str, tuple[str, ...]] = field(default_factory=dict)  # 값이 정해진 인자 → 허용값
+    precheck: Optional[Callable[[Any, dict], Optional[str]]] = None    # 대상 값 검사 (확인 질문 전에 돈다) → 오류 문구
     fn: Optional[ToolFn] = None
 
     def target(self, args: dict[str, Any]) -> dict[str, Any]:
         return {k: args.get(k) for k in self.target_keys}
 
     def prompt_line(self) -> str:
-        args = ", ".join(self.params)
+        args = ", ".join(f"{k}={'|'.join(self.choices[k])}" if k in self.choices else k for k in self.params)
         conds = [c for c, on in (("본인 인증 필요", self.requires_auth),
                                  ("고객 재확인 필요", self.requires_confirmation),
                                  ("담당자 확인 필요", self.requires_contact)) if on]
@@ -78,7 +80,10 @@ class ToolRegistry:
             return ToolOutcome(False, error=f"unknown_tool:{name}")
         unknown = set(args) - set(spec.params)
         if unknown:
-            return ToolOutcome(False, error=f"bad_args:{sorted(unknown)}")
+            return ToolOutcome(False, error=f"bad_args:{sorted(unknown)} (인자: {', '.join(spec.params) or '없음'})")
+        for k, allowed in spec.choices.items():
+            if k in args and args[k] not in allowed:
+                return ToolOutcome(False, error=f"bad_value:{k}={args[k]} (허용: {', '.join(allowed)})")
         try:
             result = spec.fn(state, **args)
         except Exception as e:  # 백엔드 장애·시간 초과도 여기로

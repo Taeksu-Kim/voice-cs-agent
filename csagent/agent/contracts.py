@@ -20,6 +20,7 @@ class CallContext:
     direction: Literal["inbound", "outbound"] = "inbound"
     audience: str = "consumer"
     companies: tuple[str, ...] = ()
+    service: str = "토스"                                     # 받는·거는 회선의 회사 (인사말·자기소개 주체)
     customer: dict[str, Any] = field(default_factory=dict)  # 가짜 CRM: 이름·주문 등
     today: str = ""                                          # 시나리오 기준 날짜
 

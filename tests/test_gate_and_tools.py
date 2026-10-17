@@ -32,8 +32,9 @@ def test_execute_requires_auth_then_confirmation_of_same_target():
     TOOLS.run(s, "request_app_auth", {})
     assert _check(s, "report_card_lost", {"card_id": "C1"}).reason == "confirmation_required"
 
-    TOOLS.run(s, "request_confirmation", {"action": "report_card_lost", "target": {"card_id": "C1"}})
+    assert s.ask_confirm("report_card_lost", {"card_id": "C1"}) == "asked"
     s.turn = 2
+    assert s.ask_confirm("report_card_lost", {"card_id": "C1"}) == "waiting"   # 다시 걸면 원래 질문 유지
     assert s.resolve_pending("yes", "네 해주세요", "네 해주세요 빨리요")
     assert _check(s, "report_card_lost", {"card_id": "C1"}).allowed
     # 재확인한 대상과 다른 카드는 여전히 막힌다
@@ -43,7 +44,7 @@ def test_execute_requires_auth_then_confirmation_of_same_target():
 def test_duplicate_execution_blocked():
     s = new_call(CTX)
     s.authenticated, s.turn = True, 1
-    s.ask("confirm", "suspend_card", {"card_id": "C1"})
+    s.ask_confirm("suspend_card", {"card_id": "C1"})
     s.turn = 2
     s.resolve_pending("yes", "네", "네")
     assert TOOLS.run(s, "suspend_card", {"card_id": "C1"}).ok
@@ -71,7 +72,7 @@ def test_allowed_tools_restriction():
 def test_pending_answer_requires_quote_in_utterance_and_previous_turn():
     s = new_call(CTX)
     s.turn = 1
-    s.ask("confirm", "report_card_lost", {"card_id": "C1"})
+    s.ask_confirm("report_card_lost", {"card_id": "C1"})
     assert not s.resolve_pending("yes", "네", "네")               # 같은 턴에 건 질문은 확정 불가
     s.turn = 2
     assert not s.resolve_pending("yes", "네 진행해 주세요", "음 잠깐만요")  # 고객이 하지 않은 말 인용
@@ -82,6 +83,15 @@ def test_pending_answer_requires_quote_in_utterance_and_previous_turn():
 
 
 # ---------------------------------------------------------------- 도구 계층
+
+def test_lookup_orders_by_spoken_number_only_returns_own_registered_order():
+    s = new_call(CallContext(customer={"orders": [{"order_id": "A3001"}, {"order_id": "A3002"}]}))
+    assert len(TOOLS.run(s, "lookup_orders", {}).result["orders"]) == 2
+    assert len(TOOLS.run(s, "lookup_orders", {"order_id": ""}).result["orders"]) == 2
+    assert TOOLS.run(s, "lookup_orders", {"order_id": " a3002 "}).result["orders"] == [{"order_id": "A3002"}]
+    miss = TOOLS.run(s, "lookup_orders", {"order_id": "1004"})
+    assert miss.ok and miss.result["orders"] == [] and miss.result["not_found"] == "1004"
+
 
 def test_tool_failures_and_bad_args_are_results_not_exceptions():
     s = new_call(CallContext(customer={"cards": [{"card_id": "C1", "name": "카드"}],
@@ -127,10 +137,9 @@ def test_a0_executes_without_auth_but_a1_blocks():
 def test_a1_full_card_loss_flow_over_two_turns():
     s = new_call(CTX)
     agent = make_agent(ScriptedLLM([
-        # 턴 1: 인증 → 재확인 질문
+        # 턴 1: 인증 → 실행 요청 → 동의가 없어 코드가 확인 질문을 건다
         _out("", {"name": "request_app_auth", "args": {}}),
-        _out("", {"name": "request_confirmation",
-                  "args": {"action": "report_card_lost", "target": {"card_id": "C1"}}}),
+        _out("", {"name": "report_card_lost", "args": {"card_id": "C1"}}),
         _out("토스유스카드를 분실신고할까요?"),
         # 턴 2: 고객 동의 판정(인용) + 실행
         _out("", {"name": "report_card_lost", "args": {"card_id": "C1"}},
@@ -138,17 +147,18 @@ def test_a1_full_card_loss_flow_over_two_turns():
         _out("분실신고 완료됐어요."),
     ]), gate=True)
     agent.respond(s, TurnInput("유스카드 잃어버렸어요"))
-    assert s.authenticated and s.pending is not None
+    assert s.authenticated and s.pending.items == [("report_card_lost", {"card_id": "C1"})]
     reply = agent.respond(s, TurnInput("네 해주세요"))
     assert reply.text == "분실신고 완료됐어요."
-    assert [e.data["allowed"] for e in s.trace.of("gate") if e.data["name"] == "report_card_lost"] == [True]
+    assert [e.data["allowed"] for e in s.trace.of("gate") if e.data["name"] == "report_card_lost"] == [False, True]
+    assert not audit(s.trace, TOOLS).violations
     assert s.ctx.customer["cards"][0]["status"] == "분실신고"
     assert CTX.customer["cards"][0].get("status") is None          # 시나리오 원본은 그대로 (깊은 복사)
 
 
 def test_end_call_rejects_unknown_disposition():
     s = new_call(CTX)
-    assert TOOLS.run(s, "end_call", {"disposition": "normal"}).error.startswith("bad_disposition")
+    assert TOOLS.run(s, "end_call", {"disposition": "normal"}).error.startswith("bad_value:disposition")
     assert TOOLS.run(s, "end_call", {"disposition": "refused"}).ok
 
 
@@ -191,6 +201,24 @@ def test_required_in_time_and_no_repeat():
     assert checks["no_repeat"] is False           # 같은 응답 반복
 
 
+def test_same_answer_to_same_question_is_not_a_repeat():
+    sc = Scenario("t", "S1", "B0", CTX, {"goal": "택배"}, Expectation(), max_turns=3)
+    llm = ScriptedLLM([_out("송장이 먼저 등록된 경우일 가능성이 커요."), _out("송장이 먼저 등록된 경우일 가능성이 커요.")])
+    tr = run_scenario(make_agent(llm), ScriptedCustomer(["왜 조회가 안 돼요?", "왜 조회가 안 돼요?"]), sc)
+    assert {c.name: c.passed for c in score(sc, tr, TOOLS).checks}["no_repeat"] is True
+
+
+def test_one_question_confirms_several_targets():
+    s = new_call(CTX)
+    s.authenticated, s.turn = True, 1
+    s.ask_confirm("report_card_lost", {"card_id": "C1"})
+    s.ask_confirm("report_card_lost", {"card_id": "C2"})            # 같은 턴 → 한 질문으로 묶임
+    s.turn = 2
+    assert s.resolve_pending("yes", "두 장 다 해주세요", "네 두 장 다 해주세요")
+    assert _check(s, "report_card_lost", {"card_id": "C1"}).allowed
+    assert _check(s, "report_card_lost", {"card_id": "C2"}).allowed
+
+
 def test_confirmation_matches_by_execution_target_keys():
     from csagent.agent.state import covers
     assert covers({"card_id": "C1", "name": "토스유스카드"}, {"card_id": "C1"})
@@ -202,10 +230,33 @@ def test_end_call_resolved_blocked_until_confirmed_execution_succeeds():
     s = new_call(CallContext(audience="consumer", customer={**CTX.customer,
                                                                          "tool_failures": {"report_card_lost": "timeout"}}))
     s.authenticated, s.turn = True, 1
-    TOOLS.run(s, "request_confirmation", {"action": "report_card_lost", "target": {"card_id": "C1", "name": "토스유스카드"}})
+    s.ask_confirm("report_card_lost", {"card_id": "C1", "name": "토스유스카드"})
     s.turn = 2
     assert s.resolve_pending("yes", "네", "네 해주세요")
     assert _check(s, "end_call", {"disposition": "resolved"}).reason == "confirmed_not_executed"
     assert not TOOLS.run(s, "report_card_lost", {"card_id": "C1"}).ok      # 실행은 시도했지만 백엔드 장애
     assert _check(s, "end_call", {"disposition": "resolved"}).reason == "confirmed_not_executed"  # 실패도 해결 아님
     assert _check(s, "transfer_to_agent", {"reason": "장애", "summary": "-"}).allowed
+
+
+def test_stall_note_added_after_two_near_identical_replies():
+    from csagent.agent.loop import TurnLoop
+    s = new_call(CTX)
+    s.history = [("customer", "a"), ("agent", "생년월일로는 확인할 수 없어요."),
+                 ("customer", "b"), ("agent", "생년월일로는 확인할 수 없어요!")]
+    assert TurnLoop._stalled(s)
+    s.history[-1] = ("agent", "상담원에게 연결해 드릴까요?")
+    assert not TurnLoop._stalled(s)
+
+
+def test_wrong_card_id_is_returned_before_asking_customer():
+    s = new_call(CTX)
+    s.authenticated = True
+    agent = make_agent(ScriptedLLM([
+        _out("", {"name": "report_card_lost", "args": {"card_id": "토스유스카드 1234"}}),   # 이름을 넣음
+        _out("", {"name": "report_card_lost", "args": {"card_id": "C1"}}),
+        _out("토스유스카드를 분실신고할까요?"),
+    ]), gate=True)
+    agent.respond(s, TurnInput("유스카드 분실신고 해주세요"))
+    assert s.trace.of("precheck")[0].data["name"] == "report_card_lost"
+    assert s.pending.items == [("report_card_lost", {"card_id": "C1"})]     # 틀린 값으로는 묻지 않았다

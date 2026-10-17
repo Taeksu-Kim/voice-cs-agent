@@ -6,23 +6,72 @@
 
 from __future__ import annotations
 
+import difflib
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional
 
 from csagent.agent import prompts
 from csagent.agent.contracts import AgentEvent, AgentReply, ToolCall
+from csagent.agent.guardrails.contacts import ContactBook, SpeechScreen, mask_unlisted, strip_unlisted
 from csagent.agent.guardrails.gate import ExecutionGate
 from csagent.agent.state import CallState
 from csagent.agent.streaming import SayExtractor
 from csagent.agent.tools.registry import ToolRegistry
 from csagent.llm import ChatLLM, LLMResult, parse_json
+from csagent.obs import event
 from csagent.retrieval.filters import SearchFilter
+from csagent.agent.protocol import Protocol, Step, step_text
 from csagent.retrieval.retriever import HybridRetriever
 
+log = logging.getLogger("csagent.agent")
+
+STALL_SIMILARITY = 0.85
+MAX_EARLIER_RESULTS, EARLIER_RESULT_CHARS = 8, 800   # 다음 턴 프롬프트에 넘기는 이전 도구 결과
+TURN_SPEECH_CHARS = 120   # 고객이 대답하기 전까지 한 턴에 말하는 전체의 목표 길이 (prompts.py 말하기 규칙과 같은 값)
 FALLBACK = "죄송해요, 잘 못 들었어요. 한 번만 다시 말씀해 주시겠어요?"
 _DISPOSITIONS = {"send_app_link": "link_sent", "transfer_to_agent": "transferred"}
+
+# 워커 출력 형식을 디코딩 단계에서 강제한다 (prompts의 [출력 형식]과 같은 키·순서 — say가 앞쪽이라 스트리밍이 빨리 시작).
+# json_object만 주면 대화 이력의 {"say": ...}를 흉내 내 intent·tool을 빼먹고 직전 말을 되풀이하는 일이 있었다.
+WORKER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "intent": {"enum": ["continue", "switch", "add", "done"]},
+        "pending_answer": {"anyOf": [
+            {"type": "null"},
+            {"type": "object",
+             "properties": {"answer": {"enum": ["yes", "no", "unclear"]}, "quote": {"type": "string"}},
+             "required": ["answer", "quote"]}]},
+        "slots": {"type": "object"},
+        "say": {"type": "string"},
+        "tool": {"anyOf": [
+            {"type": "null"},
+            {"type": "object",
+             "properties": {"name": {"type": "string"}, "args": {"type": "object"}},
+             "required": ["name", "args"]}]},
+        # 도구 없이 말로 실행 동의를 물을 때(「분실신고할까요?」) 그 실행 — 코드가 확인 질문으로 등록한다.
+        # 말로 묻고 → 동의 → 도구 → 게이트가 또 확인 = 확인 두 번 (card_loss choose, 10/13·10/16 재발)을 구조로 막는다
+        "confirm": {"anyOf": [
+            {"type": "null"},
+            {"type": "object",
+             "properties": {"name": {"type": "string"}, "args": {"type": "object"}},
+             "required": ["name", "args"]}]},
+    },
+    "required": ["intent", "pending_answer", "slots", "say", "tool", "confirm"],
+}
+
+
+@dataclass(frozen=True)
+class SlotRule:
+    """도구를 슬롯 값에 따라 허용한다 — 위험한 갈래는 LLM이 사실(슬롯)만 판단하고, 갈래 선택은 코드가 지킨다.
+    예: 착오송금 접수 링크는 transfer_reason이 「실수」일 때만."""
+    tool: str
+    slot: str
+    allowed: tuple[str, ...]
+    message: str                               # 막혔을 때 LLM에게 줄 안내 ({value} = 현재 슬롯 값)
 
 
 @dataclass(frozen=True)
@@ -32,19 +81,23 @@ class TurnPolicy:
     tools: Optional[tuple[str, ...]] = None    # 허용 도구 (None = 전부)
     retrieve: bool = True
     first_tool: Optional[str] = None           # 이 업무에서 답하기 전에 반드시 먼저 할 조회 (코드가 강제)
+    slot_rules: tuple[SlotRule, ...] = ()
+    protocol: Optional[Protocol] = None        # 있으면 지시문·허용 도구를 지금 단계 것으로 쓴다 (task·tools 대신)
+    toss_numbers_only: bool = False            # 말해도 되는 번호를 토스 계열 확인 번호로 좁힌다 (카드사 번호 등은 문서에 있어도 지움)
 
 
 @dataclass
 class LoopOutcome:
     reply: AgentReply
-    intent: str = "continue"                   # continue | switch | done
+    intent: str = "continue"                   # continue | switch | add | done (마지막 스텝 기준)
+    added: bool = False                        # 이 턴 어느 스텝에서든 add가 나왔나 (뒤 스텝이 continue로 덮어도 유지)
     slots: dict[str, Any] = field(default_factory=dict)
 
 
 class TurnLoop:
     def __init__(self, retriever: HybridRetriever, llm: ChatLLM, tools: ToolRegistry, *,
                  gate: Optional[ExecutionGate] = None, k: int = 4, doc_chars: int = 700,
-                 max_steps: int = 4) -> None:
+                 max_steps: int = 4, contacts: Optional[ContactBook] = None) -> None:
         self.retriever = retriever
         self.llm = llm
         self.tools = tools
@@ -52,6 +105,7 @@ class TurnLoop:
         self.k = k
         self.doc_chars = doc_chars
         self.max_steps = max_steps
+        self.contacts = contacts      # 없으면 연락처 줄·번호 검사 없음
 
     def run(self, state: CallState, utterance: str, policy: TurnPolicy,
             slots: Optional[dict] = None, t0: Optional[float] = None) -> Iterator[AgentEvent | LoopOutcome]:
@@ -63,8 +117,13 @@ class TurnLoop:
             yield AgentEvent("retrieval", {
                 "ms": round(t_retrieve), "worker": policy.name,
                 "docs": [{"chunk_id": h.chunk_id, "title": h.title, "section": h.section,
-                          "score": round(h.score, 4)} for h in hits]})
+                          "score": round(h.score, 4), "url": h.url} for h in hits]})
 
+        # 말해도 되는 전화번호 = 이 통화에서 지금까지 검색된 문서들의 연락처
+        allowed = None if self.contacts is None else self.contacts.allowed(
+            (cid for e in state.trace.of("retrieval") for cid in e.data.get("chunk_ids", [])),
+            toss_only=policy.toss_numbers_only)
+        stage = self._enter_step(state, policy, None)
         messages = self._messages(state, utterance, policy, hits or [], slots or {})
         reply = AgentReply(text="", retrieved=[h.chunk_id for h in hits or []])
         outcome = LoopOutcome(reply)
@@ -73,29 +132,44 @@ class TurnLoop:
 
         for step in range(1, self.max_steps + 1):
             yield AgentEvent("step", {"worker": policy.name, "step": step})   # 화면에 「LLM 생성 중」 표시용
-            extractor, result = SayExtractor(), None
-            for item in self.llm.stream_chat(messages, max_tokens=320, json_mode=True):
+            extractor, result, spoken, closed = SayExtractor(), None, "", False
+            screen = SpeechScreen(allowed)
+            for item in self.llm.stream_chat(messages, max_tokens=320, json_mode=True, schema=WORKER_SCHEMA):
                 if isinstance(item, LLMResult):
                     result = item
                     continue
-                piece = extractor.feed(item)
+                piece = screen.feed(extractor.feed(item))
+                if extractor.done:
+                    piece += screen.flush()   # say가 닫혔다 — 붙잡아 둔 문장 끝까지 검사해 내보낸다
                 if piece and extractor.intent != "switch":   # 전환이면 이 워커의 말은 고객에게 보내지 않는다
                     first_token_ms = first_token_ms or (time.perf_counter() - t0) * 1000
+                    spoken += piece
                     yield AgentEvent("delta", {"text": piece})
+                if extractor.done and spoken and not closed:
+                    # say가 닫혔다 — 음성은 뒤의 도구 인자 생성을 기다리지 않고 남은 조각을 바로 읽는다
+                    closed = True
+                    yield AgentEvent("say_end", {})
+            if spoken:   # 스트리밍으로 이미 나간 말 — 뒤에서 버려도(절차 강제·도구 차단) 고객은 들었다
+                state.trace.add(state.turn, "spoken", {"worker": policy.name, "text": spoken})
             llm_ms += result.latency_ms
             tokens["prompt"] += result.prompt_tokens
             tokens["completion"] += result.completion_tokens
-            state.trace.add(state.turn, "llm", {"role": policy.name, "ms": round(result.latency_ms),
+            state.trace.add(state.turn, "llm", {"role": policy.name, "call_id": result.call_id,
+                                                 "ms": round(result.latency_ms),
                                                  "prompt_tokens": result.prompt_tokens,
                                                  "completion_tokens": result.completion_tokens})
             try:
                 out = parse_json(result.text)
             except (ValueError, json.JSONDecodeError):
+                event(log, "fallback", logging.WARNING, call_id=state.call_id, turn=state.turn,
+                      worker=policy.name, reason="parse_error", llm_call_id=result.call_id,
+                      output=result.text[:300])
                 yield AgentEvent("delta", {"text": FALLBACK})
                 said.append(FALLBACK)
                 break
 
             outcome.intent = out.get("intent") or "continue"
+            outcome.added |= outcome.intent == "add"
             if outcome.intent == "switch":
                 state.trace.add(state.turn, "intent", {"worker": policy.name, "intent": "switch"})
                 said.clear()
@@ -104,23 +178,39 @@ class TurnLoop:
                 outcome.slots.update(out["slots"])
             self._apply_pending_answer(state, out.get("pending_answer"), utterance)
             say, tool = (out.get("say") or "").strip(), out.get("tool")
+            say, removed = strip_unlisted(say, allowed)   # 스트리밍에서 지운 것과 같은 결과 (기록되는 말)
+            if removed:
+                state.trace.add(state.turn, "number_blocked", {"worker": policy.name, "numbers": removed})
+                event(log, "number_blocked", logging.WARNING, call_id=state.call_id, turn=state.turn,
+                      worker=policy.name, numbers=removed, llm_call_id=result.call_id)
             if not tool and self._needs_first_tool(state, policy):
                 # 절차 강제: 업무의 첫 조회를 하기 전에 답하려 하면 되돌려 보낸다 (이 응답은 버림)
+                # 버린 응답은 메시지에 남기지 않는다 — 남기면 조회 뒤에도 그 응답의 질문을 되풀이한다
                 state.trace.add(state.turn, "step_enforced", {"worker": policy.name, "tool": policy.first_tool})
-                messages += [{"role": "assistant", "content": result.text},
-                             {"role": "user", "content": f"[절차] 답하기 전에 먼저 {policy.first_tool}로 사실을 확인하세요."}]
+                event(log, "step_enforced", call_id=state.call_id, turn=state.turn, worker=policy.name,
+                      tool=policy.first_tool, llm_call_id=result.call_id)
+                messages[-1] = {**messages[-1], "content": messages[-1]["content"]
+                                + f"\n\n[절차] 답하기 전에 먼저 {policy.first_tool}로 사실을 확인하세요."}
                 continue
             if say and say not in said:     # 같은 턴에 똑같은 문장을 두 번 말하지 않는다 (문자열 비교)
                 said.append(say)
             if not tool:
+                if say and isinstance(out.get("confirm"), dict):
+                    self._spoken_confirm(state, policy, out["confirm"])
+                break
+            held = self._question_hold(state, policy, say, tool)
+            if held == "drop":
                 break
 
-            call, feedback, stop = self._run_tool(state, tool, policy)
+            call, feedback, stop = self._run_tool(state, tool, policy, {**(slots or {}), **outcome.slots})
+            self._log_tool(state, policy, call)
             spec = self.tools.get(call.name)
             if call.result.get("ok") and spec and spec.asks_customer and say \
                     and call.result.get("status") == "pending":
                 stop = True  # 이 스텝의 말이 곧 질문이다 — 결과를 받고 또 말하면 같은 질문을 반복한다
-            if not call.result.get("ok") and said and said[-1] == say:
+            stop = stop or held == "stop"
+            if not call.result.get("ok") and said and said[-1] == say and not held \
+                    and call.result.get("blocked") != "result_unheard":
                 said.pop()   # 도구가 실패·차단된 스텝의 말은 그 도구가 된다는 전제였으므로 버린다 (재시도 스텝이 다시 말함)
             reply.tool_calls.append(call)
             yield AgentEvent("tool_call", {"name": call.name, "args": call.args})
@@ -128,13 +218,23 @@ class TurnLoop:
             self._apply_disposition(reply, call)
             if stop:
                 break
-            if said:   # 한 턴에 여러 스텝이면 앞 스텝에서 한 말을 다시 하기 쉽다 → 이미 한 말을 알려 준다
-                feedback += (f"\n[이번 턴에 이미 한 말] {' '.join(said)}\n"
-                             "같은 내용을 다시 말하지 말고, 이 결과에 이어서 할 말만 say에 넣으세요.")
+            if stage is not None and (new := self._enter_step(state, policy, stage)) is not stage:
+                stage = new   # 도구 결과로 단계가 바뀌었다 → 새 단계의 지시·도구를 알려 준다
+                feedback += "\n\n" + step_text(policy.protocol, stage)
+            if said:   # 한 턴에 여러 스텝이면 앞 스텝에서 한 말을 다시 하기 쉽다 → 이미 한 말과 길이를 알려 준다
+                so_far = " ".join(said)
+                feedback += (f"\n[이번 턴에 이미 한 말 — {len(so_far)}자] {so_far}\n"
+                             "같은 내용을 다시 말하지 말고, 이 결과에 이어서 할 말만 say에 넣으세요. "
+                             f"고객이 대답하기 전까지 말하는 전체가 {TURN_SPEECH_CHARS}자 안쪽이 되게 하세요.")
             messages += [{"role": "assistant", "content": result.text},
                          {"role": "user", "content": feedback}]
+        else:
+            event(log, "max_steps", logging.WARNING, call_id=state.call_id, turn=state.turn,
+                  worker=policy.name, steps=self.max_steps)
 
         if outcome.intent != "switch" and not said:
+            event(log, "fallback", logging.WARNING, call_id=state.call_id, turn=state.turn,
+                  worker=policy.name, reason="no_say")
             said.append(FALLBACK)
             yield AgentEvent("delta", {"text": FALLBACK})
         reply.text = " ".join(said)
@@ -148,6 +248,12 @@ class TurnLoop:
         if not policy.first_tool or state.active is None:
             return False
         return policy.first_tool not in state.active.tools_done
+
+    @staticmethod
+    def _stalled(state: CallState) -> bool:
+        """직전 두 에이전트 응답이 거의 같은 문장인가 (문자열 유사도 — 의미 판단 아님)."""
+        said = [t for r, t in state.history if r == "agent"][-2:]
+        return len(said) == 2 and difflib.SequenceMatcher(None, *said).ratio() >= STALL_SIMILARITY
 
     # -- 검색 --
 
@@ -165,7 +271,8 @@ class TurnLoop:
 
     # -- 도구 --
 
-    def _run_tool(self, state: CallState, tool: dict, policy: TurnPolicy) -> tuple[ToolCall, str, bool]:
+    def _run_tool(self, state: CallState, tool: dict, policy: TurnPolicy,
+                  slots: dict) -> tuple[ToolCall, str, bool]:
         """(호출 기록, LLM에게 돌려줄 메시지, 이번 턴을 끝낼지)."""
         name, args = tool.get("name", ""), tool.get("args") or {}
         call = ToolCall(name, args)
@@ -175,11 +282,33 @@ class TurnLoop:
             call.result = {"ok": False, "error": f"unknown_tool:{name}"}
             return call, f"[도구 오류] 없는 도구입니다: {name}", False
 
+        if spec.precheck and (err := spec.precheck(state, args)):
+            # 대상 값이 틀렸으면 게이트·확인 질문 전에 돌려보낸다 (틀린 대상으로 고객 동의를 받지 않게)
+            call.result = {"ok": False, "blocked": "precheck", "error": err}
+            state.trace.add(state.turn, "precheck", {"name": name, "error": err})
+            return call, f"[인자 오류] {err}. 아직 아무것도 실행하지 않았습니다. 올바른 값으로 다시 호출하세요.", False
+
+        for rule in policy.slot_rules:
+            value = slots.get(rule.slot)
+            if rule.tool == name and value not in rule.allowed:
+                call.result = {"ok": False, "blocked": "slot_rule", "slot": rule.slot, "value": value}
+                state.trace.add(state.turn, "slot_rule", {"name": name, "slot": rule.slot, "value": value})
+                return call, f"[실행 차단] {rule.message.format(value=value)}", False
+
         if self.gate is not None:
-            allowed = set(policy.tools) if policy.tools is not None else None
+            tools = self._tools_for(state, policy)
+            allowed = set(tools) if tools is not None else None
             decision = self.gate.check(state, spec, args, allowed_tools=allowed)
             state.trace.add(state.turn, "gate", {"name": name, "allowed": decision.allowed,
                                                  "reason": decision.reason})
+            if decision.reason == "tasks_queued" and state.end_blocked_turn is None:
+                state.end_blocked_turn = state.turn   # 종료 차단은 이 턴 한 번만 — 다음 턴에 또 끝내려 하면 허용
+            if not decision.allowed and decision.reason == "confirmation_required":
+                return call, self._ask_confirmation(state, call, spec.name, spec.target(args)), False
+            if decision.reason == "result_unheard":
+                # 워커를 다시 부르지 않고 턴을 끝낸다 — 이 스텝의 말(결과 안내)은 그대로 두고 고객 대답을 기다린다
+                call.result = {"ok": False, "blocked": decision.reason}
+                return call, "", True
             if not decision.allowed:
                 call.result = {"ok": False, "blocked": decision.reason}
                 return call, f"[실행 차단] {decision.message}", False
@@ -188,12 +317,85 @@ class TurnLoop:
         call.result = {"ok": outcome.ok, **outcome.result,
                        **({"error": outcome.error} if outcome.error else {})}
         state.trace.add(state.turn, "tool_result", {"name": name, "risk": spec.risk, **call.result})
+        if outcome.ok and spec.risk in ("execute", "notify"):   # 정지·분실신고, 링크 발송·재통화 예약 등
+            state.acted_turn = state.turn
         if outcome.ok and state.active is not None:
             state.active.tools_done.add(name)
+            lists = [v for v in outcome.result.values() if isinstance(v, list)]
+            if lists and not any(lists):
+                state.active.tools_empty.add(name)
+            else:
+                state.active.tools_empty.discard(name)
         prefix = "[도구 결과]" if outcome.ok else "[도구 실패]"
         # 이관·종료는 성공했을 때만 턴을 끝낸다 (실패하면 오류를 보고 다시 시도하게)
         return call, f"{prefix} " + json.dumps(call.result, ensure_ascii=False), \
             spec.risk == "handoff" and outcome.ok
+
+    @staticmethod
+    def _log_tool(state: CallState, policy: TurnPolicy, call: ToolCall) -> None:
+        """도구 호출 한 건의 결말: ok | confirm(확인 질문 걸림) | blocked(사유) | failed."""
+        r = call.result or {}
+        if r.get("ok"):
+            status, level = "ok", logging.INFO
+        elif "confirmation" in r:
+            status, level = "confirm", logging.INFO
+        elif r.get("blocked"):
+            status, level = "blocked", logging.INFO
+        else:
+            status, level = "failed", logging.WARNING
+        event(log, "tool", level, call_id=state.call_id, turn=state.turn, worker=policy.name,
+              tool=call.name, status=status, reason=r.get("blocked") or r.get("error"))
+
+    def _question_hold(self, state: CallState, policy: TurnPolicy, say: str, tool: dict) -> str:
+        """말이 질문(「?」로 끝남)인데 같은 응답에 도구를 냈다 → 고객 대답을 기다린다.
+        묻고 스스로 답하기(o1_h6 「알려 드릴까요? 네, 확인했습니다」)·묻고 끊기·묻고 대답 전에 예약하기가
+        지시문으로 금지돼 있어도 샘 (10/15~17 기록 271통화 중 19건, 전부 「?」로 끝남) → 코드로 막는다.
+        "" 그대로 진행 | "stop" 조회는 하고 턴 종료 (결과는 다음 턴에 씀) | "drop" 실행하지 않고 턴 종료."""
+        name, args = tool.get("name", ""), tool.get("args") or {}
+        spec = self.tools.get(name)
+        if not say.endswith("?") or spec is None or spec.asks_customer:
+            return ""
+        state.trace.add(state.turn, "question_hold", {"name": name, "args": args,
+                                                       "ran": spec.risk == "read"})
+        if spec.risk == "read":
+            return "stop"
+        if spec.requires_confirmation:   # 「분실신고할까요?」 + 실행 → 그 질문을 확인 질문으로 등록 (동의하면 바로 실행)
+            self._spoken_confirm(state, policy, {"name": name, "args": args})
+        return "drop"
+
+    def _spoken_confirm(self, state: CallState, policy: TurnPolicy, ask: dict) -> None:
+        """말로 물은 실행 동의를 확인 질문으로 등록한다 — 게이트가 「동의만 없어서」 막을 실행일 때만.
+        인증 전·대상 오류·허용 안 된 도구면 등록하지 않는다 (동의를 받아도 실행할 수 없는 질문이다)."""
+        name, args = ask.get("name", ""), ask.get("args") or {}
+        spec = self.tools.get(name)
+        reason = ""
+        if spec is None or not spec.requires_confirmation:
+            reason = "no_confirmation_needed"
+        elif spec.precheck and spec.precheck(state, args):
+            reason = "precheck"
+        elif self.gate is not None:
+            tools = self._tools_for(state, policy)
+            decision = self.gate.check(state, spec, args, allowed_tools=set(tools) if tools is not None else None)
+            if decision.reason != "confirmation_required":
+                reason = decision.reason or "already_confirmed"
+        if reason:
+            state.trace.add(state.turn, "spoken_confirm", {"name": name, "args": args, "registered": False,
+                                                           "reason": reason})
+            return
+        state.ask_confirm(name, spec.target(args))
+        state.trace.add(state.turn, "spoken_confirm", {"name": name, "args": args, "registered": True})
+
+    @staticmethod
+    def _ask_confirmation(state: CallState, call: ToolCall, action: str, target: dict) -> str:
+        """동의 없는 실행 요청 → 실행하지 않고 확인 질문을 건다 (질문 걸기는 코드가 한다)."""
+        status = state.ask_confirm(action, target)
+        call.result = {"ok": False, "confirmation": status, "action": action, "target": target}
+        if status == "waiting":
+            return ("[확인 대기] 이 실행에 대한 확인 질문을 이미 걸어 두었고 아직 동의가 확정되지 않았습니다. "
+                    "다시 묻지 말고, 이번 고객 말을 pending_answer(answer, quote)로 판정해서 같은 도구와 함께 출력하세요.")
+        return (f"[확인 필요] 아직 실행하지 않았습니다. 고객 동의가 필요해 확인 질문을 걸었습니다: {action} "
+                f"{json.dumps(target, ensure_ascii=False)}. 대상이 더 있으면 같은 방식으로 이어서 요청하고, "
+                "다 걸었으면 tool 없이 무엇을 할지 말하고 진행할지 물어보세요.")
 
     @staticmethod
     def _apply_pending_answer(state: CallState, ans: Optional[dict], utterance: str) -> None:
@@ -214,29 +416,95 @@ class TurnLoop:
         elif call.name in _DISPOSITIONS:
             reply.disposition = _DISPOSITIONS[call.name]
 
+    # -- 프로토콜 단계 --
+
+    @staticmethod
+    def _tools_for(state: CallState, policy: TurnPolicy) -> Optional[tuple[str, ...]]:
+        if policy.protocol is not None:
+            return policy.protocol.tools(policy.protocol.current(state))
+        return policy.tools
+
+    @staticmethod
+    def _enter_step(state: CallState, policy: TurnPolicy, prev: Optional[Step]) -> Optional[Step]:
+        """지금 단계를 정하고, 바뀌었으면 trace에 남긴다. 프로토콜이 없으면 None."""
+        if policy.protocol is None:
+            return None
+        step = policy.protocol.current(state)
+        if prev is not None and step.id == prev.id:
+            return prev
+        state.trace.add(state.turn, "protocol_step", {"worker": policy.name, "step": step.id})
+        return step
+
     # -- 컨텍스트 --
+
+    @staticmethod
+    def _earlier_tool_results(state: CallState) -> str:
+        """이전 턴들의 도구 결과. 이번 턴 결과는 메시지([도구 결과])로 이미 들어간다.
+
+        대화 이력에는 상담원의 say만 남으므로, 이걸 넣지 않으면 다음 턴의 모델은 조회 결과를 볼 수 없다
+        (모델이 slots에 자발적으로 옮겨 적었을 때만 보였다 → 안 적은 실행에서 없는 주문을 지어냄, s1_b2).
+        같은 결과(반복 조회)는 한 번만, 최근 것부터 MAX_EARLIER_RESULTS개.
+        """
+        seen, lines = set(), []
+        for e in reversed(state.trace.of("tool_result")):
+            if e.turn >= state.turn or e.data.get("name") == "end_call":
+                continue
+            body = json.dumps({k: v for k, v in e.data.items() if k != "risk"}, ensure_ascii=False)
+            if body in seen:
+                continue
+            seen.add(body)
+            lines.append(f"- {e.turn}턴 {body[:EARLIER_RESULT_CHARS]}")
+            if len(lines) >= MAX_EARLIER_RESULTS:
+                break
+        return "\n".join(reversed(lines)) or "(없음)"
+
+    def _doc_text(self, hit, policy: TurnPolicy) -> str:
+        text = hit.display_text()[:self.doc_chars]
+        if policy.toss_numbers_only and self.contacts:   # 토스 계열 확인 번호만 남기고 본문의 다른 번호는 가린다
+            text = mask_unlisted(text, self.contacts.allowed([hit.chunk_id], toss_only=True))
+        return text
+
+    def _contact_lines(self, chunk_id: str, toss_only: bool = False) -> str:
+        lines = self.contacts.render(chunk_id, toss_only=toss_only) if self.contacts else ""
+        return "\n" + lines if lines else ""
 
     def _messages(self, state: CallState, utterance: str, policy: TurnPolicy, hits,
                   slots: dict) -> list[dict]:
-        docs = "\n\n".join(f"[{i}] {h.display_text()[:self.doc_chars]}"
+        docs = "\n\n".join(f"[{i}] {self._doc_text(h, policy)}" + self._contact_lines(h.chunk_id, policy.toss_numbers_only)
                            for i, h in enumerate(hits, 1)) or "(없음)"
         p = state.pending
-        pending = (f"{'실행 재확인' if p.kind == 'confirm' else '담당자 확인'}: "
-                   f"{p.action} {json.dumps(p.target, ensure_ascii=False)}" if p else "(없음)")
-        names = list(policy.tools) if policy.tools is not None else None
+        if p is None:
+            pending = "(없음)"
+        elif p.kind == "confirm":
+            pending = "실행 동의: " + ", ".join(f"{a} {json.dumps(t, ensure_ascii=False)}" for a, t in p.items)
+        else:
+            pending = "담당자 본인인지"
+        tools = self._tools_for(state, policy)
+        names = list(tools) if tools is not None else None
+        p_ = policy.protocol
         system = prompts.SYSTEM.format(
-            task=policy.task, tools=self.tools.prompt(names), pending=pending,
-            slots=json.dumps(slots, ensure_ascii=False) if slots else "(없음)")
+            service=state.ctx.service,
+            task=p_.task_text(p_.current(state)) if p_ is not None else policy.task, tools=self.tools.prompt(names), pending=pending,
+            queued=", ".join(t.name for t in state.queue) or "(없음)",
+            slots=json.dumps(slots, ensure_ascii=False) if slots else "(없음)",
+            tool_results=self._earlier_tool_results(state))
         context = prompts.CONTEXT.format(
             today=state.ctx.today or "-", audience=state.ctx.audience, direction=state.ctx.direction,
             name=state.ctx.customer.get("name", "-"), docs=docs,
             auth="완료" if state.authenticated else "안 됨",
             contact="완료" if state.contact_verified else "안 됨")
+        if self._stalled(state):
+            context += ("\n\n[진행 정체] 직전 두 응답이 거의 같은 말이었다. 같은 말을 되풀이하지 않는다. "
+                        "더 진행할 수 없으면 이유를 한 문장으로 말하고 상담원 연결(transfer_to_agent)을 제안한다.")
         # Qwen 채팅 템플릿은 system 메시지를 맨 앞 하나만 허용한다 → 규칙과 통화 정보를 합친다
         msgs = [{"role": "system", "content": system + "\n\n" + context}]
-        for role, text in state.history:
+        # 0턴 고정 인사는 빼다 — 모델이 자기 말로 보고 막힐 때 그대로 베꼈다 (s5_b7_auth_fail, runs/20261016_183622_C).
+        # 인사를 이미 했다는 사실은 SYSTEM 규칙에 있다
+        history = state.history[1:] if state.trace.of("greeting") else state.history
+        for role, text in history:
             msgs.append({"role": "user" if role == "customer" else "assistant",
                          "content": text if role == "customer"
                          else json.dumps({"say": text}, ensure_ascii=False)})
         msgs.append({"role": "user", "content": utterance})
         return msgs
+
