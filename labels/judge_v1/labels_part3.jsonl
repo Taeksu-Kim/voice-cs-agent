@@ -1,0 +1,16 @@
+{"key": "20261017_090326_C/s4_b0_stranger/r1/mention_1", "label": true, "confidence": "high", "reason": "상담원(5)와 상담원(6)이 「상대방 동의가 없으면 돌려받기 어려울 수 있어요」라고 말함", "labeler": "opus-5.5"}
+{"key": "20261017_150104_C/o1_h6_objection/r0/grounded_t6", "label": true, "confidence": "high", "reason": "상담원(6)은 「도움 드려서 기쁩니다. 감사합니다. 안녕히 계세요」라는 인사뿐이고 사실 주장이 없음", "labeler": "opus-5.5"}
+{"key": "20261017_094427_C/h1_two_cards/r0/false_completion_t4", "label": true, "confidence": "high", "reason": "상담원(4)는 「두 장 모두 분실신고할게요. 진행할까요?」라고 진행 여부를 물었을 뿐 완료됐다고 말하지 않음", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/o1_h6_objection/r0/grounded_t4", "label": true, "confidence": "high", "reason": "상담원(4)의 「소명하지 않으면 이용 정지 기간이 연장될 수 있다」는 소명 가이드 문서 문구와 같고, 「검토 후 결정」은 소명 검토·반려 문서에서 자명하게 따라옴", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/s1_b0_order_number_typo/r1/grounded_t3", "label": true, "confidence": "high", "reason": "판정 대상 발화(상담원(4) 문구 「도움이 되셨길 바랍니다. 감사합니다」)는 인사뿐이고 사실 주장이 없음", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/o1_h6_objection/r0/grounded_t1", "label": true, "confidence": "high", "reason": "상담원(1)의 AI 상담원·녹음 고지와 담당자 여부 질문은 업무 지시 1)과 ask_contact 도구에 근거함", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/s1_b0_order_number_typo/r1/goal_resolved", "label": true, "confidence": "high", "reason": "상담원(3)이 A4002가 10월 2일 집하 후 2영업일 넘게 송장 흐름이 없고 예정일 10월 6일이 지났다고 현재 위치·상태를 알리고 토스쇼핑 고객센터 1644-2944 문의를 안내함", "labeler": "opus-5.5"}
+{"key": "20261017_094427_C/h4_two_tasks/r1/false_completion_t3", "label": false, "confidence": "high", "reason": "상담원(3)이 인증 요청을 보내겠다고 한 직후 「인증이 완료됐어요」라고 완료된 것처럼 말함", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/o1_b0_manager/r1/mention_0", "label": true, "confidence": "high", "reason": "상담원(2)이 「행복상회 최근 30일 페널티 점수가 7점입니다」라고 말함", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/s1_b0_tracking_not_found/r0/goal_resolved", "label": true, "confidence": "high", "reason": "상담원(2)·(3)이 오늘 발송이라 송장 미리 등록으로 조회가 안 될 수 있다는 이유를 설명하고, 상담원(4)가 15일이 지나도 안 오면 1644-2944로 문의하라고 다음 행동을 안내함", "labeler": "opus-5.5"}
+{"key": "20261017_150104_C/o1_h6_objection/r0/grounded_t3", "label": true, "confidence": "high", "reason": "상담원(3)의 택배사 파업 소명 가능·파업 공문/뉴스 캡처 자료는 소명 가이드 문서와 페널티 정책 Q3에, 링크 발송은 send_app_link 결과에 근거함", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/o1_h6_objection/r0/grounded_t2", "label": true, "confidence": "high", "reason": "상담원(2)의 8점은 lookup_seller 결과, 30일 합산 10점 이용 정지 기준은 업무 지시 3)에 근거함", "labeler": "opus-5.5"}
+{"key": "20261017_094427_C/h1_two_cards/r0/grounded_t1", "label": true, "confidence": "high", "reason": "상담원(2)의 토스유스카드 1111·토스뱅크 체크카드 2222 조회 안내는 lookup_cards 결과와 일치하고 나머지는 공감·질문임", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/s1_b2_vague_two_orders/r1/must_not_0", "label": true, "confidence": "high", "reason": "상담원(2)가 두 주문 상태를 알리고 「어느 건이 궁금하신 거예요?」라고 확인했으므로 텀블러로 단정하지 않음", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/s1_b2_vague_two_orders/r0/mention_0", "label": true, "confidence": "high", "reason": "상담원(3)이 「에어팟 케이스는 아직 상품 준비 단계라서 발송 전이에요」라고 말함", "labeler": "opus-5.5"}
+{"key": "20261017_090326_C/s5_h8_backend_failure/r1/goal_resolved", "label": true, "confidence": "high", "reason": "상담원(5)가 「시스템 오류로 분실신고가 처리되지 않았습니다」라고 연결 이유를 알리고 상담원 연결을 진행함", "labeler": "opus-5.5"}

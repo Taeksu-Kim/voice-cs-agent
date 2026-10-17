@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import random
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -216,14 +217,19 @@ _SIM_FAITHFUL = """\
 _GOAL_TRANSFERRED = ("이 통화는 사람 상담원에게 연결됐다. 상담원이 직접 처리할 수 없거나 연결이 필요한 이유를 "
                      "고객에게 알리고 연결했는가? (연결된 상담원이 이어서 처리하므로, 그 뒤 절차까지 안내할 필요는 없다)")
 _GOAL = ("고객의 통화 목적이 해결됐는가? 정책상 해결할 수 없는 경우라면 "
-         "그 이유와 고객이 할 수 있는 다음 행동이 정확히 안내됐는가?")
+         "그 이유와 고객이 할 수 있는 다음 행동이 정확히 안내됐는가? "
+         "(상담원은 문서·조회 결과에 없는 정보를 지어내면 안 된다 — 타사 연락처처럼 근거가 없는 정보를 "
+         "주지 않은 것은 실패가 아니며, 그 정보를 어디서 확인할 수 있는지 안내했으면 다음 행동이 안내된 것이다)")
 
 
 class LLMJudge:
-    def __init__(self, llm: ChatLLM, instructions: Optional[dict[str, str]] = None) -> None:
-        """instructions: 워커 이름 → 업무 지시문. 근거 판정에서 그 턴을 맡은 워커의 지시문도 근거로 준다."""
+    def __init__(self, llm: ChatLLM, instructions: Optional[dict[str, str]] = None,
+                 order_seed: Optional[int] = None) -> None:
+        """instructions: 워커 이름 → 업무 지시문. 근거 판정에서 그 턴을 맡은 워커의 지시문도 근거로 준다.
+        order_seed: 통화 판정 질문의 제시 순서를 섞는 시드 (판정 일관성 측정용, None이면 원래 순서)."""
         self.llm = llm
         self.instructions = instructions or {}
+        self.order_seed = order_seed
 
     def checks(self, sc: Scenario, tr: Transcript, proc: ProcedureReport) -> list[Check]:
         return self._conversation_checks(sc, tr, proc) + [self._grounded(tr)]
@@ -233,20 +239,33 @@ class LLMJudge:
 
     # -- 통화 전체 판정: 필수 내용·금지 언행·목표 해결·실패 후 완료 발언 --
 
+    @staticmethod
+    def conversation_questions(sc: Scenario, tr: Transcript, proc: ProcedureReport) -> list[tuple[str, str, bool]]:
+        """(질문 id, 질문, YES가 통과인가)."""
+        return ([(f"mention_{i}", f"상담원이 고객에게 다음 내용을 전달했는가? → {m}", True)
+                 for i, m in enumerate(sc.expect.must_mention)]
+                + [(f"must_not_{i}", f"상담원이 다음 말이나 행동을 했는가? → {m}", False)
+                   for i, m in enumerate(sc.expect.must_not)]
+                + [("goal_resolved", _GOAL_TRANSFERRED if _transfer_expected(sc, tr) else _GOAL, True)]
+                # 발화를 번호가 아니라 문장으로 가리킨다 — 통화 기록의 상담원(n)은 인사 때문에 턴 번호와 어긋난다
+                + [(f"false_completion_t{t}", f"다음 상담원 발화에서, 실제로는 처리가 실패하거나 진행되지 않았는데 "
+                                             f"처리가 완료된 것처럼 말했는가? → 「{tr.replies[t - 1].text}」", False)
+                   for t in sorted(proc.failed_exec_turns) if 0 < t <= len(tr.replies)])
+
+    @staticmethod
+    def transcript_text(tr: Transcript) -> str:
+        return "\n".join(f"{'고객' if r == 'customer' else f'상담원({i // 2 + 1})'}: {t}"
+                         for i, (r, t) in enumerate(tr.turns))
+
     def _conversation_checks(self, sc: Scenario, tr: Transcript, proc: ProcedureReport) -> list[Check]:
-        qs = ([(f"mention_{i}", f"상담원이 고객에게 다음 내용을 전달했는가? → {m}", True)
-               for i, m in enumerate(sc.expect.must_mention)]
-              + [(f"must_not_{i}", f"상담원이 다음 말이나 행동을 했는가? → {m}", False)
-                 for i, m in enumerate(sc.expect.must_not)]
-              + [("goal_resolved", _GOAL_TRANSFERRED if _transfer_expected(sc, tr) else _GOAL, True)]
-              + [(f"false_completion_t{t}", f"{t}번째 상담원 발화에서, 실제로는 처리가 실패하거나 진행되지 "
-                                           f"않았는데 처리가 완료된 것처럼 말했는가?", False)
-                 for t in sorted(proc.failed_exec_turns)])
+        qs = self.conversation_questions(sc, tr, proc)
+        shown = list(qs)
+        if self.order_seed is not None:
+            random.Random(self.order_seed).shuffle(shown)
         prompt = _JUDGE.format(
             goal=sc.customer.get("goal", ""),
-            transcript="\n".join(f"{'고객' if r == 'customer' else f'상담원({i // 2 + 1})'}: {t}"
-                                 for i, (r, t) in enumerate(tr.turns)),
-            questions="\n".join(f"- {qid}: {q}" for qid, q, _ in qs))
+            transcript=self.transcript_text(tr),
+            questions="\n".join(f"- {qid}: {q}" for qid, q, _ in shown))
         try:
             answers = {a["id"]: a for a in parse_json(self.llm.chat(
                 [{"role": "user", "content": prompt}], max_tokens=800, json_mode=True).text)["answers"]}
@@ -265,6 +284,16 @@ class LLMJudge:
     # -- 턴별 판정: 근거 없는 사실 주장 (모델 길이 한도 때문에 턴마다 따로) --
 
     def _grounded(self, tr: Transcript) -> Check:
+        bad = []
+        for g in self.grounded_turns(tr):
+            if g["unsupported"] is None:
+                return Check("grounded", None, f"{g['turn']}턴 판정 파싱 실패")
+            if g["unsupported"]:
+                bad.append(f"{g['turn']}턴: {g['claim']}")
+        return Check("grounded", not bad, "; ".join(bad) or "모든 턴 근거 있음")
+
+    def grounded_inputs(self, tr: Transcript) -> list[dict]:
+        """턴별 근거 판정 입력 (판정 프롬프트에 들어가는 그대로)."""
         docs_by_turn = {e.turn: e.data.get("texts", []) for e in tr.state.trace.of("retrieval")}
         workers_by_turn: dict[int, list[str]] = {}
         for e in tr.state.trace.of("llm"):
@@ -272,26 +301,35 @@ class LLMJudge:
             if e.data.get("role") not in workers_by_turn[e.turn]:
                 workers_by_turn[e.turn].append(e.data.get("role"))
         tool_events = tr.state.trace.of("tool_result")
-        bad = []
+        out = []
         for turn, reply in enumerate(tr.replies, start=1):
             # 근거 범위: 이번 턴과 직전 턴의 검색 문서 + 지금까지의 모든 도구 결과
             # (앞 턴에서 조회한 결과를 이어서 말하는 경우가 많다)
             docs = docs_by_turn.get(turn - 1, []) + docs_by_turn.get(turn, [])
             results = [e.data for e in tool_events if e.turn <= turn]
-            prompt = _GROUNDED.format(
-                docs="\n\n".join(dict.fromkeys(docs)) or "(없음)",
-                tools=json.dumps(results, ensure_ascii=False) if results else "(없음)",
-                instructions="\n\n".join(self.instructions[w] for w in workers_by_turn.get(turn, [])
-                                         if w in self.instructions) or "(없음)",
-                say=reply.text)
+            out.append({
+                "turn": turn,
+                "docs": "\n\n".join(dict.fromkeys(docs)) or "(없음)",
+                "tools": json.dumps(results, ensure_ascii=False) if results else "(없음)",
+                "instructions": "\n\n".join(self.instructions[w] for w in workers_by_turn.get(turn, [])
+                                            if w in self.instructions) or "(없음)",
+                "say": reply.text})
+        return out
+
+    def grounded_turns(self, tr: Transcript) -> list[dict]:
+        """턴별 근거 판정: {turn, unsupported (파싱 실패면 None), claim}."""
+        out = []
+        for g in self.grounded_inputs(tr):
+            prompt = _GROUNDED.format(docs=g["docs"], tools=g["tools"],
+                                      instructions=g["instructions"], say=g["say"])
             try:
-                out = parse_json(self.llm.chat([{"role": "user", "content": prompt}],
+                res = parse_json(self.llm.chat([{"role": "user", "content": prompt}],
                                                max_tokens=200, json_mode=True).text)
+                out.append({"turn": g["turn"], "claim": res.get("claim", ""),
+                            "unsupported": str(res.get("unsupported", "")).upper().startswith("Y")})
             except (ValueError, json.JSONDecodeError):
-                return Check("grounded", None, f"{turn}턴 판정 파싱 실패")
-            if str(out.get("unsupported", "")).upper().startswith("Y"):
-                bad.append(f"{turn}턴: {out.get('claim', '')}")
-        return Check("grounded", not bad, "; ".join(bad) or "모든 턴 근거 있음")
+                out.append({"turn": g["turn"], "unsupported": None, "claim": ""})
+        return out
 
 
     # -- 진단: 시뮬레이터가 설정에 없는 사실을 지어냈나 --

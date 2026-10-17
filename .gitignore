@@ -14,3 +14,7 @@ runs/
 logs/
 # 평가 실행 로그 (nohup 출력)
 runs_*.log
+# 라벨 표본의 판정 입력 (검색 문서 원문·통화 기록 포함 — runs/와 같은 이유로 제외)
+labels/**/items.jsonl
+labels/*/sample.jsonl
+labels/*/part*.jsonl
