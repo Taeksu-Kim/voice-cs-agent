@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -10,6 +11,9 @@ from csagent.agent.interface import Agent, new_call
 from csagent.agent.state import CallState
 from csagent.evaluation.scenario import Scenario
 from csagent.evaluation.simulator import CustomerSimulator
+from csagent.obs import event
+
+log = logging.getLogger("csagent.eval")
 
 
 @dataclass
@@ -64,4 +68,6 @@ def run_scenario(agent: Agent, customer: CustomerSimulator, scenario: Scenario) 
     if tr.disposition is None:
         # 에이전트가 결과를 남기지 않고 끝난 통화 — 해결 여부는 시뮬레이터 자기 보고가 아니라 Judge가 판정한다
         tr.disposition = "customer_ended"
+    event(log, "call_end", call_id=tr.state.call_id, disposition=tr.disposition, end_reason=tr.end_reason,
+          turns=len(tr.replies))
     return tr

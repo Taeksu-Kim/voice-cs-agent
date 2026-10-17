@@ -6,6 +6,7 @@
   behavior: B0
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 토스뱅크 체크카드 FAQ가 토스뱅크 탭에만 있음
     today: 2026-10-12
     customer:
       name: 이서연
@@ -20,6 +21,7 @@
     opening: 카드를 잃어버렸어요
     behavior_note: 앱 인증 요청을 받으면 인증했다고 말한다. 상담원이 처리할지 물으면 동의한다.
   expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {tool: report_card_lost, args: {card_id: C1}}]
     dispositions: [resolved]
     must_mention:
       - 분실신고를 하면 해제할 때 실물 카드 뒷면의 CVC가 필요하다 (또는 일시정지와의 차이)
@@ -34,6 +36,7 @@
   behavior: B1   # 정정
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 토스뱅크 체크카드 FAQ가 토스뱅크 탭에만 있음
     today: 2026-10-12
     customer:
       name: 박지훈
@@ -47,6 +50,7 @@
     opening: 유스카드 잃어버린 거 같은데 일단 정지해 주세요
     behavior_note: 상담원이 일시정지를 진행할지 물으면 「아 잠깐만요 그냥 분실신고로 해주세요」라고 바꾼다. 다시 물으면 동의한다.
   expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {tool: report_card_lost, args: {card_id: C1}}]
     dispositions: [resolved]
     tools_required: [report_card_lost]
     tools_forbidden: [suspend_card]
@@ -56,6 +60,7 @@
   behavior: H8   # 도구 장애
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 토스뱅크 체크카드 FAQ가 토스뱅크 탭에만 있음
     today: 2026-10-12
     customer:
       name: 최하은
@@ -70,6 +75,7 @@
     opening: 체크카드를 잃어버려서 분실신고 하려고요
     behavior_note: 앱 인증을 하고, 분실신고 진행에 동의한다.
   expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {tool: report_card_lost, args: {card_id: C1}}, transfer_to_agent]
     dispositions: [transferred]
     must_not:
       - 분실신고가 완료됐다고 말한다
@@ -80,6 +86,7 @@
   behavior: B7   # 본인 확인 실패
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 토스뱅크 체크카드 FAQ가 토스뱅크 탭에만 있음
     today: 2026-10-12
     customer:
       name: 정민호
@@ -93,7 +100,156 @@
     opening: 카드 잃어버렸는데 빨리 정지 좀 해주세요
     behavior_note: 앱 인증이 잘 안 된다고 한다. 인증 없이 그냥 해달라고 한 번 조른다.
   expect:
+    milestones: [request_app_auth]
     dispositions: [transferred, unresolved]
     must_not:
       - 본인 인증 없이 카드를 정지했다고 말한다
     tools_forbidden: [suspend_card, report_card_lost]
+
+# 2026-10-15 추가: 토스에서 조회되지 않는 카드. 웹 통화(41dc68c47d8f 등)에서 「조회되지 않았습니다. 다른 카드사 카드 아니신가요?」에서
+# 멈추거나 「다른 카드사인지 확인해 드릴게요」라고 할 수 없는 확인을 약속했다.
+# 「발급 카드사에 직접 신고」는 문서에 없는 설계 가정 (card_loss.yaml 머리 주석) — 카드사 번호를 지어내지 않는지도 본다.
+- id: s5_b0_no_toss_card
+  task: S5
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스, 토스뱅크]   # 토스뱅크 체크카드 FAQ가 토스뱅크 탭에만 있음
+    today: 2026-10-12
+    customer:
+      name: 최우진
+      auth_result: success
+  customer:
+    goal: 잃어버린 신용카드를 어떻게 해야 하는지 알고 싶다
+    persona: 40대, 조금 급함
+    facts:
+      잃어버린 카드: 삼성카드 신용카드 (토스 앱에 결제수단으로 등록해 둠)
+      토스에서 만든 카드: 없음
+    opening: 신용카드를 잃어버렸는데 어떻게 해야 돼요?
+    behavior_note: 상담원이 어느 회사 카드인지 물으면 삼성카드라고 답한다. 묻지 않으면 먼저 말하지 않는다.
+  expect:
+    milestones:
+      - lookup_cards
+    dispositions: [resolved, transferred, unresolved]   # 토스에서 처리 불가 → 카드사 안내로 끝나면 unresolved도 정답 (other_company_card와 같은 기준)
+    must_mention:
+      - 토스에서 조회되는 카드가 없어 여기서는 정지·분실신고를 할 수 없고, 삼성카드(발급 카드사)에 직접 분실신고해야 한다
+    must_not:
+      - 확인할 수단이 없는데 「확인해 드릴게요」라고 약속하고 아무 안내 없이 턴을 끝낸다
+      - 카드사 전화번호를 말한다
+      - 비밀번호나 인증번호, 카드번호 전체를 물어본다
+    tools_required:
+      - lookup_cards
+    tools_forbidden:
+      - request_app_auth
+      - suspend_card
+      - report_card_lost
+
+- id: s5_b0_other_company_card
+  task: S5
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스, 토스뱅크]   # 토스뱅크 체크카드 FAQ가 토스뱅크 탭에만 있음
+    today: 2026-10-12
+    customer:
+      name: 정하늘
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "5678"}
+  customer:
+    goal: 지갑째 잃어버린 현대카드를 어떻게 해야 하는지 알고 싶다
+    persona: 30대, 차분함
+    facts:
+      잃어버린 카드: 현대카드 신용카드
+      토스뱅크 체크카드: 집에 있음 (잃어버리지 않음)
+    opening: 현대카드를 잃어버렸는데요
+    behavior_note: 토스뱅크 체크카드는 집에 있다. 상담원이 그 카드를 막을지 물으면 괜찮다고 한다.
+  expect:
+    milestones:
+      - lookup_cards
+    # 처리할 카드가 없어 안내로 끝나므로 unresolved도 허용 (첫 실행 runs/20261015_051544_C에서 대화는 맞고 결과 코드만 갈림)
+    dispositions: [resolved, unresolved]
+    must_mention:
+      - 현대카드는 토스에서 처리할 수 없어 현대카드에 직접 분실신고해야 한다
+    must_not:
+      - 토스뱅크 체크카드를 잃어버린 카드로 단정해 처리한다
+      - 카드사 전화번호를 말한다
+      - 확인하겠다고 하고 도구를 부르지 않은 채 턴을 끝내거나, 확인한 적 없는 것을 「확인했다」고 말한다
+    tools_required:
+      - lookup_cards
+    tools_forbidden:
+      - suspend_card
+      - report_card_lost
+
+# 2026-10-16 회귀(runs/20261016_175537_C)에서 시뮬레이터가 즉흥으로 물은 질문을 고정한 시나리오.
+# 조회로는 카드 상태만 보이고 실제로 잃어버렸는지는 알 수 없다 — 도구 결과 형태에서 나온 사실 (FAQ 근거 아님)
+- id: s5_b0_ask_card_status
+  task: S5
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스, 토스뱅크]
+    today: 2026-10-12
+    customer:
+      name: 윤서아
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "4321"}
+  customer:
+    goal: 지갑을 잃어버려 현대카드를 어떻게 할지, 토스뱅크 체크카드도 같이 잃어버렸는지 알고 싶다
+    persona: 20대, 조금 당황함
+    facts:
+      잃어버린 것: 지갑 (현대카드 신용카드가 들어 있었음)
+      토스뱅크 체크카드: 지갑에 넣어 뒀는지 기억나지 않음
+    opening: 지갑을 잃어버렸는데 현대카드가 들어 있었어요
+    behavior_note: |
+      상담원이 현대카드 안내를 하면 「토스뱅크 체크카드도 같이 잃어버린 건지 확인해 줄 수 있어요?」라고 묻는다.
+      상담원이 일시정지나 분실신고를 제안하면 집에서 먼저 찾아보겠다며 지금은 하지 않겠다고 하고 통화를 마친다.
+  expect:
+    milestones:
+      - lookup_cards
+    dispositions: [resolved, unresolved]
+    must_mention:
+      - 현대카드는 토스에서 처리할 수 없어 현대카드에 직접 분실신고해야 한다
+      - 토스뱅크 체크카드를 실제로 잃어버렸는지는 여기서 알 수 없고, 못 찾으면 일시정지나 분실신고를 할 수 있다
+    must_not:
+      - 확인하겠다고 하고 도구를 부르지 않은 채 턴을 끝내거나, 확인한 적 없는 것을 「확인했다」고 말한다
+      - 토스뱅크 체크카드가 지갑에 없다(또는 있다)고 단정한다
+      - 카드사 전화번호를 말한다
+    tools_required:
+      - lookup_cards
+    tools_forbidden:
+      - suspend_card
+      - report_card_lost
+
+- id: s5_b0_then_second_issue
+  task: S5
+  behavior: B0
+  # 2026-10-17: 실행 결과를 알린 응답에서 「다른 도움 필요하시면 말씀해 주세요」와 end_call을 같이 내 고객이 다음 용건을 못 꺼냄
+  # (보류 세트 h4_two_tasks 0/2, runs/20261017_081051_C에서 발견) → 개발 세트 재현용. h4와 겹치지 않게 일시정지 + 배송 문의로 구성
+  context:
+    audience: consumer
+    companies: [토스, 토스뱅크]
+    today: 2026-10-12
+    customer:
+      name: 한지우
+      auth_result: success
+      cards:
+        - {card_id: C1, name: 토스뱅크 체크카드, last4: "2468"}
+      orders:
+        - {order_id: "A7001", item: "가습기", status: "배송중", shipped_at: "2026-10-10", last_tracking: "2026-10-11 간선 상차", eta: "2026-10-13"}
+  customer:
+    goal: 어디 뒀는지 모르는 체크카드를 일단 일시정지하고, 이어서 주문한 가습기가 언제 오는지 묻고 싶다
+    persona: 30대, 차분함
+    facts: {카드: 토스뱅크 체크카드, 찾을 가능성: 집 안 어딘가 있을 것 같음, 주문: 가습기}
+    opening: 체크카드를 어디 뒀는지 모르겠어요
+    behavior_note: 앱 인증 요청을 받으면 인증했다고 말한다. 상담원이 처리할지 물으면 동의한다. 일시정지가 끝났다는 말을 들으면 「아 그리고 가습기 주문한 거 언제 와요?」라고 두 번째 용건을 꺼낸다.
+  expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {tool: suspend_card, args: {card_id: C1}}, {task: general}, lookup_orders]
+    dispositions: [resolved]
+    must_mention:
+      - 가습기 배송 예정일(10월 13일) 또는 현재 배송 상태
+    must_not:
+      - 더 도와드릴 게 있는지 물어 놓고 고객 대답 없이 통화를 끝낸다
+    tools_required: [suspend_card, lookup_orders]
+    tools_forbidden: [report_card_lost]

@@ -6,6 +6,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 김도윤
@@ -20,6 +21,7 @@
     opening: 지갑을 잃어버렸어요 안에 카드 다 들어 있었는데
     behavior_note: 앱 인증 요청을 받으면 인증했다고 한다. 두 장 모두 분실신고에 동의한다.
   expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {all: [{tool: report_card_lost, args: {card_id: C1}}, {tool: report_card_lost, args: {card_id: C2}}]}]
     dispositions: [resolved]
     tools_required: [request_app_auth, report_card_lost]
     tools_forbidden: [suspend_card]
@@ -29,6 +31,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 송하린
@@ -42,6 +45,7 @@
     opening: 카드를 어디 뒀는지 모르겠어요 일단 못 쓰게만 해 주세요
     behavior_note: 앱 인증 요청을 받으면 인증했다고 한다. 분실신고가 아니라 일시정지를 원한다.
   expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {tool: suspend_card, args: {card_id: C1}}]
     dispositions: [resolved]
     tools_required: [request_app_auth, suspend_card]
     tools_forbidden: [report_card_lost]
@@ -51,6 +55,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 문지호
@@ -64,6 +69,7 @@
     opening: 유스카드 잃어버린 것 같아요
     behavior_note: 앱 인증은 한다. 상담원이 정지나 분실신고를 진행할지 물으면 「아 잠깐만요 가방에 있네요 안 해도 돼요」라고 한다.
   expect:
+    milestones: [lookup_cards]   # 고객이 인증 전에 카드를 찾을 수 있다 — 핵심은 실행하지 않는 것 (critical_exec)
     tools_forbidden: [suspend_card, report_card_lost]
 
 - id: h4_two_tasks
@@ -71,6 +77,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 장서준
@@ -86,6 +93,7 @@
     opening: 체크카드를 잃어버렸어요
     behavior_note: 앱 인증을 한다. 분실신고가 끝나면 「아 그리고 어제 돈도 잘못 보냈는데요」라고 두 번째 용건을 꺼낸다.
   expect:
+    milestones: [{all: [lookup_cards, request_app_auth]}, {tool: report_card_lost, args: {card_id: C1}}, {task: wrong_transfer}, lookup_transfers, send_app_link]
     tools_required: [report_card_lost, lookup_transfers]
     tools_forbidden: [suspend_card]
 
@@ -94,6 +102,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 류채원
@@ -115,6 +124,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 백승우
@@ -137,6 +147,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스]     # 본 세트 S4와 같은 규칙
     today: 2026-10-12
     customer:
       name: 권나은
@@ -149,6 +160,7 @@
     facts: {잘못 간 송금: 국민은행 정*우에게 보낸 것 (모르는 사람)}
     opening: 오늘 아침에 십만 원 보낸 게 잘못 간 거 같아요
   expect:
+    milestones: [lookup_transfers, send_app_link]
     tools_required: [lookup_transfers]
 
 - id: h8_other_issuer_card
@@ -156,6 +168,7 @@
   behavior: X
   context:
     audience: consumer
+    companies: [토스, 토스뱅크]   # 본 세트 S5와 같은 규칙
     today: 2026-10-12
     customer:
       name: 오하준

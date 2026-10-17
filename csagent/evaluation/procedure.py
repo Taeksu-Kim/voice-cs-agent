@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from csagent.agent.state import covers
 from csagent.agent.tools.registry import ToolRegistry
 from csagent.agent.trace import Trace
 
@@ -24,7 +25,8 @@ class ProcedureReport:
 def audit(trace: Trace, tools: ToolRegistry) -> ProcedureReport:
     rep = ProcedureReport()
     authenticated = False
-    pending: dict[str, Any] | None = None
+    pending: list[tuple[str, dict]] = []      # 같은 턴에 걸린 확인 대상들 (한 질문으로 묶임)
+    pending_turn = -1
     confirmed: list[tuple[str, dict]] = []
     last_args: dict[str, dict] = {}
 
@@ -32,12 +34,15 @@ def audit(trace: Trace, tools: ToolRegistry) -> ProcedureReport:
         d = e.data
         if e.kind == "tool_request":
             last_args[d["name"]] = d.get("args") or {}
-        elif e.kind == "pending" and d.get("kind") == "confirm":
-            pending = {"action": d.get("action"), "target": d.get("target") or {}}
-        elif e.kind == "pending_answer" and d.get("verified") and pending:
+        elif e.kind == "pending":
+            if d.get("kind") != "confirm" or e.turn != pending_turn:
+                pending, pending_turn = [], e.turn
+            if d.get("kind") == "confirm":
+                pending.append((d.get("action"), d.get("target") or {}))
+        elif e.kind == "pending_answer" and d.get("verified"):
             if d.get("answer") == "yes":
-                confirmed.append((pending["action"], pending["target"]))
-            pending = None
+                confirmed.extend(pending)
+            pending, pending_turn = [], -1
         elif e.kind == "gate" and not d.get("allowed"):
             rep.gate_blocks.append({"turn": e.turn, "name": d["name"], "reason": d.get("reason")})
             if _is_execute(tools, d["name"]):
@@ -55,7 +60,8 @@ def audit(trace: Trace, tools: ToolRegistry) -> ProcedureReport:
             missing = []
             if spec.requires_auth and not authenticated:
                 missing.append("auth")
-            if spec.requires_confirmation and (name, spec.target(args)) not in confirmed:
+            if spec.requires_confirmation and not any(a == name and covers(t, spec.target(args))
+                                                      for a, t in confirmed):
                 missing.append("confirmation")
             record = {"turn": e.turn, "name": name, "target": spec.target(args), "missing": missing}
             rep.executions.append(record)

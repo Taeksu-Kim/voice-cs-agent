@@ -136,3 +136,52 @@ def test_respond_stream_event_order():
     assert types[0] == "retrieval" and types[-1] == "done"
     assert types.index("tool_call") < types.index("tool_result") < types.index("delta")
     assert "".join(e.data["text"] for e in events if e.type == "delta") == "배송중이에요."
+
+
+def test_judge_uses_transfer_goal_and_worker_instructions_and_sim_diagnostic():
+    sc = _scenario(must_mention=[], must_not=[])
+    tr = run_scenario(make_agent(ScriptedLLM([_say("확인해 볼게요.")])),
+                      ScriptedCustomer(["며칠요"]), sc)
+    tr.disposition = "transferred"   # 기대 결과를 정하지 않은 시나리오 → 연결이 허용된 결과
+    judge_llm = ScriptedLLM([
+        json.dumps({"answers": [{"id": "goal_resolved", "answer": "YES", "reason": "연결 사유 안내"}]}),
+        json.dumps({"unsupported": "NO", "claim": ""}),
+        json.dumps({"invented": "YES", "what": "1. 이름 김철수"}),
+    ])
+    judge = LLMJudge(judge_llm, {"baseline": "지시문: 토스 비밀번호로 해제"})
+    score_ = score(sc, tr, default_registry(), judge)
+    goal_prompt, grounded_prompt, sim_prompt = (c[0]["content"] for c in judge_llm.calls)
+    assert "사람 상담원에게 연결됐다" in goal_prompt
+    assert "토스 비밀번호로 해제" in grounded_prompt          # 그 턴 워커의 지시문도 근거
+    assert "며칠요" in sim_prompt
+    assert score_.passed                                         # 진단은 통과 판정에 안 들어감
+    assert [(c.name, c.passed) for c in score_.diagnostics if c.name == "sim_faithful"] == [("sim_faithful", False)]
+
+
+def test_speech_diagnostics_counts_questions_long_utterances_and_unsaid_speech():
+    from csagent.evaluation.scoring import speech_diagnostics
+    replies = ["카드 확인했어요. 두 장 맞죠? 분실신고할까요?", "7점이고 3점, 2점, 2점이에요."]
+    trace = [{"turn": 1, "kind": "spoken", "data": {"text": "카드 확인했어요."}},
+             {"turn": 1, "kind": "spoken", "data": {"text": "처리해 드릴게요."}},      # 차단돼 버려진 말
+             {"turn": 2, "kind": "spoken", "data": {"text": "가" * 121}}]
+    d = {c.name: c for c in speech_diagnostics(replies, trace)}
+    assert d["questions_per_turn"].passed is False and "A1" in d["questions_per_turn"].detail
+    assert d["numbers_per_turn"].detail.startswith("최대 4개 (A2)")
+    assert d["utterance_len"].passed is False
+    assert d["spoken_unsaid"].passed is False and "처리해 드릴게요" in d["spoken_unsaid"].detail
+    old = {c.name: c for c in speech_diagnostics(replies, [])}   # spoken 기록 없는 이전 실행
+    assert old["utterance_len"].passed is None and old["spoken_unsaid"].passed is None
+
+
+def test_llm_customer_enforces_schema_and_raises_on_missing_utterance():
+    import pytest
+    from csagent.evaluation.simulator import SCHEMA, LLMCustomer
+    sc = _scenario()
+    llm = ScriptedLLM([json.dumps({"utteration": "네 해주세요", "hang_up": False, "satisfied": False})])
+    with pytest.raises(ValueError):            # 키 오타 → 끊음이 아니라 오류
+        LLMCustomer(llm).next(sc, [("customer", "여보세요"), ("agent", "무엇을 도와드릴까요?")])
+    ok = ScriptedLLM([json.dumps({"utterance": "", "hang_up": True, "satisfied": True})])
+    cust = LLMCustomer(ok)
+    assert cust.next(sc, [("customer", "여보세요"), ("agent", "감사합니다.")]) is None   # 말없이 끊는 건 정상
+    assert cust.satisfied is True
+    assert SCHEMA["required"] == ["utterance", "hang_up", "satisfied"]

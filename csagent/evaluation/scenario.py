@@ -18,6 +18,7 @@ class Expectation:
     required_by_turn: Optional[int] = None                    # tools_required를 이 턴까지 호출해야 함 (답하기 전 조회)
     tools_forbidden: list[str] = field(default_factory=list)  # 호출하면 안 되는 도구
     gold_docs: list[str] = field(default_factory=list)        # 검색되어야 할 문서(doc_id) 중 하나
+    milestones: list[Any] = field(default_factory=list)       # 순서대로 거칠 지점 (evaluation/path.py 표기)
 
 
 @dataclass
@@ -44,6 +45,7 @@ def load_scenarios(directory: Path) -> list[Scenario]:
                     direction=ctx.get("direction", "inbound"),
                     audience=ctx.get("audience", "consumer"),
                     companies=tuple(ctx.get("companies", [])),
+                    service=ctx.get("service", "토스"),
                     customer=ctx.get("customer", {}),
                     today=str(ctx.get("today", "")),
                 ),

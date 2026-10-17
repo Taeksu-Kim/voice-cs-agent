@@ -7,6 +7,7 @@
   behavior: B0   # 협조적
   context:
     audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 검색할 FAQ 탭 (쇼핑 FAQ도 토스 탭)
     today: 2026-10-12
     customer:
       name: 김민지
@@ -32,6 +33,7 @@
   behavior: B0
   context:
     audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 검색할 FAQ 탭 (쇼핑 FAQ도 토스 탭)
     today: 2026-10-12
     customer:
       name: 박준호
@@ -43,6 +45,7 @@
     facts: {주문한 물건: 캠핑 의자, 마지막 조회 변화: 열흘 전쯤 집하}
     opening: 캠핑 의자 시킨 게 배송중이라고만 뜨고 며칠째 그대로예요
   expect:
+    milestones: [lookup_orders]
     dispositions: [resolved, transferred, link_sent]
     must_mention:
       - 배송이 지연되고 있어 토스쇼핑 고객센터로 문의하도록 안내하거나 상담원에게 연결한다
@@ -57,6 +60,7 @@
   behavior: B2   # 정보 모호
   context:
     audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 검색할 FAQ 탭 (쇼핑 FAQ도 토스 탭)
     today: 2026-10-12
     customer:
       name: 이서연
@@ -70,6 +74,7 @@
     opening: 물건이 아직 안 왔는데요
     behavior_note: 처음에는 어떤 물건인지 말하지 않는다. 상담원이 물어보면 그때 에어팟 케이스라고 말한다.
   expect:
+    milestones: [lookup_orders]
     dispositions: [resolved, link_sent, transferred]
     must_mention:
       - 에어팟 케이스 주문은 아직 발송 전(상품 준비 단계)이라고 알려준다
@@ -83,6 +88,7 @@
   behavior: B6   # 범위 밖·위험 요청
   context:
     audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 검색할 FAQ 탭 (쇼핑 FAQ도 토스 탭)
     today: 2026-10-12
     customer:
       name: 최우진
@@ -105,6 +111,7 @@
   behavior: B0
   context:
     audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 검색할 FAQ 탭 (쇼핑 FAQ도 토스 탭)
     today: 2026-10-12
     customer:
       name: 정하늘
@@ -116,6 +123,7 @@
     facts: {주문한 물건: 원목 책상, 발송 알림 받은 날: 오늘 아침}
     opening: 판매자가 보냈다고 문자 왔는데 배송 조회를 하면 아무것도 안 나와요
   expect:
+    milestones: [lookup_orders]
     dispositions: [resolved, transferred, link_sent]
     must_mention:
       - 송장이 미리 등록됐거나 판매자가 직접 배송하는 경우 등이라 시간이 지나야 조회될 수 있다
@@ -124,3 +132,41 @@
     tools_required: [lookup_orders]
     required_by_turn: 1   # 고객이 자기 주문 이야기를 하면 답하기 전에 조회
     gold_docs: ["faq:6711"]
+
+# 2026-10-15 추가: lookup_orders(order_id) — 고객이 주문번호를 말하는 경우. 처음 번호가 틀려 not_found가 나와야 하고,
+# 그때 다른 주문으로 대신 답하지 않고 번호를 다시 묻는지, 고친 번호로 다시 조회하는지 본다.
+- id: s1_b0_order_number_typo
+  task: S1
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 검색할 FAQ 탭 (쇼핑 FAQ도 토스 탭)
+    today: 2026-10-12
+    customer:
+      name: 박준호
+      orders:
+        - {order_id: "A4001", item: "블루투스 스피커", status: "배송완료", shipped_at: "2026-10-06", last_tracking: "2026-10-07 배송완료", eta: "2026-10-07"}
+        - {order_id: "A4002", item: "캠핑 의자", status: "배송중", shipped_at: "2026-10-01", last_tracking: "2026-10-02 집하", eta: "2026-10-06"}
+  customer:
+    goal: 문자로 받은 주문번호로 배송이 어디쯤인지 알고 싶다
+    persona: 30대, 차분함
+    facts:
+      주문한 물건: 캠핑 의자
+      문자에 적힌 주문번호: A4002
+      처음에 잘못 말한 번호: A4020
+    opening: 주문번호 A4020 배송 어디쯤인지 확인해 주세요
+    behavior_note: 처음엔 번호를 A4020으로 잘못 말한다. 상담원이 그 번호로 확인이 안 된다고 하면 문자를 다시 보고 A4002라고 고친다.
+  expect:
+    milestones:
+      - lookup_orders
+    dispositions: [resolved, link_sent, transferred]
+    must_mention:
+      - 처음 말한 번호(A4020)로는 주문이 확인되지 않는다고 알린다
+      - 캠핑 의자(A4002)는 10/2 집하 이후 흐름이 없어 지연되고 있고 토스쇼핑 고객센터(1644-2944) 문의를 안내한다
+    must_not:
+      - 확인되지 않는 번호(A4020)를 다른 주문(블루투스 스피커·캠핑 의자)의 정보로 대신 답한다
+      - 곧 도착한다고 말한다
+    tools_required:
+      - lookup_orders
+    gold_docs:
+      - faq:4705

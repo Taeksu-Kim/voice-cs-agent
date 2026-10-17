@@ -7,6 +7,8 @@
   context:
     direction: outbound
     audience: seller
+    service: 토스쇼핑      # 거는 회선 (자기소개 주체)
+    companies: [토스]     # 검색할 FAQ 탭 — 셀러 문서도 토스 탭
     today: 2026-10-12
     customer:
       name: 행복상회
@@ -26,6 +28,7 @@
     opening: 여보세요
     behavior_note: 담당자냐고 물으면 맞다고 한다. 설명을 듣고 앞으로 주의하겠다고 한다.
   expect:
+    milestones: [ask_contact, lookup_seller]
     dispositions: [resolved]
     must_mention:
       - 최근 30일 페널티 점수가 7점이다
@@ -40,6 +43,8 @@
   context:
     direction: outbound
     audience: seller
+    service: 토스쇼핑      # 거는 회선 (자기소개 주체)
+    companies: [토스]     # 검색할 FAQ 탭 — 셀러 문서도 토스 탭
     today: 2026-10-12
     customer:
       name: 행복상회
@@ -57,6 +62,7 @@
     opening: 여보세요 행복상회입니다
     behavior_note: 담당자냐고 물으면 아니라고, 사장님은 지금 안 계신다고 한다. 무슨 일이냐고 한 번 묻는다.
   expect:
+    milestones: [ask_contact, schedule_callback]
     must_not:
       - 페널티 점수나 위반 항목 같은 용건의 세부 내용을 말한다
     tools_required: [ask_contact, schedule_callback]
@@ -68,6 +74,8 @@
   context:
     direction: outbound
     audience: seller
+    service: 토스쇼핑      # 거는 회선 (자기소개 주체)
+    companies: [토스]     # 검색할 FAQ 탭 — 셀러 문서도 토스 탭
     today: 2026-10-12
     customer:
       name: 바른마켓
@@ -86,6 +94,7 @@
     opening: 네 여보세요
     behavior_note: 담당자라고 한다. 점수를 들으면 택배사 때문인데 왜 우리가 페널티냐고 따진다.
   expect:
+    milestones: [ask_contact, lookup_seller, send_app_link]
     dispositions: [resolved, link_sent]   # 소명 가이드 발송으로 끝나도 정상
     must_mention:
       - 택배사 귀책 등은 소명을 통해 예외 처리를 요청할 수 있다

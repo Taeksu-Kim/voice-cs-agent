@@ -47,9 +47,17 @@ _SYSTEM = """\
 - [너의 상황]에 없는 사실(배송 방식, 날짜, 판매자와의 연락, 조회 결과 등)을 지어내지 않는다. 모르면 모른다고 한다.
 - 상담원이 같은 말을 되풀이하며 진전이 없으면, 한 번 더 요청해 보고 그래도 같으면 끊는다.
 - 목표가 해결됐거나, 더 이상 진전이 없거나, 상담원이 통화를 마무리하면 짧게 인사하고 끝낸다.
+- 처리를 부탁하거나 진행에 동의하는 말(「네 해주세요」)을 하면서 끊지 않는다. 결과를 듣고 끊는다.
 
 [출력] JSON 하나: {{"utterance": "할 말", "hang_up": true/false, "satisfied": true/false}}
 hang_up=true면 이번 말이 마지막이다. satisfied는 끊을 때 목표가 해결됐다고 느끼는지."""
+
+# 키 이름까지 강제 (vLLM 구조화 출력) — json_mode만 쓰면 "utteration" 같은 키 오타가 나오고,
+# 발화가 비어 「고객이 끊음」으로 처리돼 통화가 잘렸다 (2026-10-13 실행에서 46건 중 3건)
+SCHEMA = {"type": "object",
+          "properties": {"utterance": {"type": "string"}, "hang_up": {"type": "boolean"},
+                         "satisfied": {"type": "boolean"}},
+          "required": ["utterance", "hang_up", "satisfied"]}
 
 
 class LLMCustomer:
@@ -64,7 +72,7 @@ class LLMCustomer:
         if self._done:
             return None
         c = scenario.customer
-        if not transcript and c.get("opening"):
+        if not any(role == "customer" for role, _ in transcript) and c.get("opening"):
             return self._noisy(c["opening"])
         msgs = [{"role": "system", "content": _SYSTEM.format(
             goal=c.get("goal", ""), persona=c.get("persona", "평범한 고객"),
@@ -72,12 +80,18 @@ class LLMCustomer:
         # 시뮬레이터 입장에서는 상담원 말이 user, 자기 말이 assistant
         for role, text in transcript:
             msgs.append({"role": "assistant" if role == "customer" else "user", "content": text})
-        out = parse_json(self.llm.chat(msgs, max_tokens=150, temperature=self.temperature,
-                                       json_mode=True).text)
+        text = self.llm.chat(msgs, max_tokens=150, temperature=self.temperature,
+                             json_mode=True, schema=SCHEMA).text
+        out = parse_json(text)
+        utterance = str(out.get("utterance") or "").strip()
         self._done = bool(out.get("hang_up"))
+        if not utterance and not self._done:
+            # 끊겠다는 표시 없이 발화가 비면 출력 오류다 — 끊음으로 처리하면 통화가 잘린 채 채점된다.
+            # 예외로 올려 run_eval이 이 시나리오를 건너뛰고 errors.jsonl에 남기게 한다
+            raise ValueError(f"고객 시뮬레이터 출력에 발화가 없음: {text[:200]}")
         if self._done:
             self.satisfied = bool(out.get("satisfied"))
-        return self._noisy((out.get("utterance") or "").strip()) or None
+        return self._noisy(utterance) or None
 
     def _noisy(self, text: str) -> str:
         return self.noise(text) if self.noise else text

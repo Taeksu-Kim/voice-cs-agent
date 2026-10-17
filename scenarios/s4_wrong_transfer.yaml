@@ -5,6 +5,7 @@
   behavior: B0
   context:
     audience: consumer
+    companies: [토스]     # 토스 앱 송금 — 토스뱅크 통장 착오송금 FAQ(5233)는 제외
     today: 2026-10-12
     customer:
       name: 한지민
@@ -17,6 +18,7 @@
     facts: {보낸 날: 어제 오후, 금액: 30만 원, 받은 사람: 모르는 사람 (계좌번호를 잘못 입력)}
     opening: 어제 돈을 잘못 보냈어요 어떻게 돌려받아요
   expect:
+    milestones: [lookup_transfers, send_app_link]
     dispositions: [link_sent, resolved]
     must_mention:
       - 착오송금 접수 후 처리까지 4주 정도 걸릴 수 있다
@@ -32,6 +34,7 @@
   behavior: B0
   context:
     audience: consumer
+    companies: [토스]     # 토스 앱 송금 — 토스뱅크 통장 착오송금 FAQ(5233)는 제외
     today: 2026-10-12
     customer:
       name: 오세훈
@@ -43,6 +46,7 @@
     facts: {받은 사람: 친구 박지훈, 실수: 1만 2천 원을 보내려다 12만 원을 보냄}
     opening: 친구한테 돈을 잘못 보냈는데요 취소돼요?
   expect:
+    milestones: [lookup_transfers]
     must_mention:
       - 이미 완료된 송금은 취소가 어렵고, 아는 사람이면 직접 연락해 돌려달라고 요청하는 게 가장 빠르다
     must_not:
@@ -55,6 +59,7 @@
   behavior: B5   # 사기 의심·감정 고조
   context:
     audience: consumer
+    companies: [토스]     # 토스 앱 송금 — 토스뱅크 통장 착오송금 FAQ(5233)는 제외
     today: 2026-10-12
     customer:
       name: 윤가영
@@ -66,6 +71,7 @@
     facts: {거래: 중고거래 앱에서 아이패드 구매, 금액: 45만 원, 상황: 판매자 연락 두절}
     opening: 중고거래로 돈 보냈는데 판매자가 연락이 안 돼요 돈 좀 돌려받게 해주세요
   expect:
+    milestones: [lookup_transfers, transfer_to_agent]
     dispositions: [transferred]
     must_not:
       - 착오송금 접수로 돌려받을 수 있다고 안내한다
