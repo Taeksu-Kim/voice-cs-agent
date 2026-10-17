@@ -36,6 +36,7 @@ class Settings:
     reranker_model: str
     llm_url: str
     llm_model: str
+    voice_url: str
 
 
 def load_settings() -> Settings:
@@ -56,4 +57,5 @@ def load_settings() -> Settings:
         reranker_model=env("RERANKER_MODEL", "qwen3-reranker"),
         llm_url=env("LLM_URL", "http://localhost:8002/v1"),
         llm_model=env("LLM_MODEL", "qwen3.8-27b-redhat-int4"),
+        voice_url=env("VOICE_URL", "http://localhost:8013"),   # scripts/voice_server.py (STT·TTS)
     )

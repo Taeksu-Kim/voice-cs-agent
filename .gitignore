@@ -10,3 +10,7 @@ __pycache__/
 # 평가 실행 결과 (통화 기록 포함)
 runs/
 .pytest_cache/
+# LLM 입출력 기록 (서버)
+logs/
+# 평가 실행 로그 (nohup 출력)
+runs_*.log

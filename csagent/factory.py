@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
 
 from csagent.agent.baseline import BaselineAgent
 from csagent.agent.controller import CallController
+from csagent.agent.guardrails.contacts import ContactBook
 from csagent.agent.guardrails.gate import ExecutionGate
 from csagent.agent.loop import TurnLoop
 from csagent.agent.router import Router
 from csagent.agent.workers.specs import WORKERS
 from csagent.agent.tools.mock import default_registry
 from csagent.config import Settings, load_settings
-from csagent.llm import OpenAICompatLLM
+from csagent.llm import ChatLLM, OpenAICompatLLM
+from csagent.llm_log import LLMCallLog, LoggedLLM
+from csagent.obs import event
 from csagent.retrieval.embedders import HttpDenseEmbedder, KiwiBM25
 from csagent.retrieval.reranker import HttpReranker
 from csagent.retrieval.retriever import HybridRetriever
 from csagent.retrieval.store import MilvusStore
 
+
+log = logging.getLogger("csagent.agent")
 
 def build_retriever(with_reranker: bool = True, s: Optional[Settings] = None) -> HybridRetriever:
     s = s or load_settings()
@@ -30,18 +36,33 @@ def build_retriever(with_reranker: bool = True, s: Optional[Settings] = None) ->
     )
 
 
-def build_llm(s: Optional[Settings] = None) -> OpenAICompatLLM:
+def build_llm(s: Optional[Settings] = None, *, log: Optional[LLMCallLog] = None,
+              source: str = "agent") -> ChatLLM:
+    """log를 주면 호출마다 입출력을 기록한다 (csagent/llm_log.py)."""
     s = s or load_settings()
-    return OpenAICompatLLM(s.llm_url, s.llm_model)
+    llm = OpenAICompatLLM(s.llm_url, s.llm_model)
+    return LoggedLLM(llm, log, source) if log else llm
 
 
-def build_agent(kind: Optional[str] = None, s: Optional[Settings] = None):
+def load_contacts(s: Optional[Settings] = None) -> Optional[ContactBook]:
+    """scripts/extract_contacts.py 결과. 없으면 None (연락처 가드레일 꺼짐 — 경고만)."""
+    s = s or load_settings()
+    path = s.processed_dir / "contacts.jsonl"
+    if not path.exists():
+        event(log, "contacts_missing", logging.WARNING, path=str(path))
+        return None
+    return ContactBook.load(path, s.processed_dir / "chunks.jsonl")
+
+
+def build_agent(kind: Optional[str] = None, s: Optional[Settings] = None, *,
+                log: Optional[LLMCallLog] = None):
     """kind: A0(단일·게이트 없음) | A1(단일·게이트) | C(컨트롤러+워커·게이트, 기본). 환경변수 AGENT로도 지정."""
     kind = (kind or os.environ.get("AGENT", "C")).upper().rstrip("'")
-    retriever, llm, tools = build_retriever(True, s), build_llm(s), default_registry()
+    retriever, llm, tools = build_retriever(True, s), build_llm(s, log=log), default_registry()
     if kind == "C":
-        return CallController(TurnLoop(retriever, llm, tools, gate=ExecutionGate()),
-                              Router(llm, WORKERS), WORKERS)
+        router_llm = llm.with_source("router") if isinstance(llm, LoggedLLM) else llm
+        return CallController(TurnLoop(retriever, llm, tools, gate=ExecutionGate(), contacts=load_contacts(s)),
+                              Router(router_llm, WORKERS), WORKERS)
     if kind in ("A0", "A1"):
         return BaselineAgent(retriever, llm, tools, gate=ExecutionGate() if kind == "A1" else None)
     raise ValueError(f"알 수 없는 에이전트 구성: {kind}")
