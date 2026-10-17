@@ -85,3 +85,27 @@ def test_length_split_prefers_q_boundary():
     body = f"### 오늘 출발\nQ1. 첫 질문\n{answer}\n\nQ2. 둘째 질문\n{answer}"
     parts = Chunker(max_chars=1200).split(Document("shop:q", "shopping_doc", "FAQ", body))
     assert [p.text.split("\n")[0] for p in parts] == ["Q1. 첫 질문", "Q2. 둘째 질문"]
+
+
+def test_service_from_title_over_tab():
+    from csagent.knowledge.taxonomy import faq_service
+    # 쇼핑 FAQ는 「토스」 탭에 게시되지만 처리 주체는 토스쇼핑
+    assert faq_service(["토스"], "토스쇼핑 배송지를 어떻게 바꾸나요?", "consumer", ["쇼핑"], "") == "토스쇼핑"
+    assert faq_service(["토스", "토스뱅크"], "토스뱅크 카드 분실신고 해제", "consumer", ["카드"], "") == "토스뱅크"
+    # 브랜드콘·라이브 쇼핑은 쇼핑 분야지만 토스 앱 서비스
+    assert faq_service(["토스"], "브랜드콘은 어떻게 사용하나요?", "consumer", ["쇼핑"], "") == "토스"
+
+
+def test_service_mixed_tabs_needs_evidence():
+    from csagent.knowledge.taxonomy import faq_service
+    assert faq_service(["토스", "토스뱅크"], "모임금고 한도", "consumer", ["송금·계좌"], "") == ""
+    assert faq_service(["토스", "토스뱅크"], "해지", "consumer", ["송금·계좌"], "고객센터(1661-7654)") == "토스뱅크"
+    # 결제한 사람이 토스페이 탭 FAQ를 볼 때는 토스 고객센터 소관
+    assert faq_service(["토스페이"], "토스페이로 금액이 출금되었어요.", "consumer", ["결제·페이"], "") == "토스"
+    assert faq_service(["토스페이"], "정산 주기", "merchant", ["가맹점"], "") == "토스페이"
+
+
+def test_contacts_only_toss_family_numbers():
+    from csagent.knowledge.taxonomy import contacts
+    body = "토스뱅크 고객센터(1661-7654) 또는 국민카드 1588-1688, KCB 02-708-1000"
+    assert contacts(body) == [{"service": "토스뱅크", "phone": "1661-7654"}]

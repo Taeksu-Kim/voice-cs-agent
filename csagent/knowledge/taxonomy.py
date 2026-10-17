@@ -5,6 +5,9 @@
 - companies (토스 / 토스뱅크 / 토스페이 / 토스플레이스 / 토스모바일): 게시 워크스페이스 → 검색 필터
 - domains   (업무 분야, 아래 목록): 카테고리 매핑·키워드로 **추정**한 값 → 검색에는 쓰지 않는다.
             평가 결과를 분야별로 나눠 볼 때만 쓰는 분석용 라벨.
+- service   (처리 주체: 토스 / 토스뱅크 / 토스증권 / 토스쇼핑 …): 제목·게시 탭·본문 번호로 **추정**한 값.
+            게시 탭 ≠ 처리 주체라서 따로 둔다 (쇼핑 FAQ는 「토스」 탭, 토스뱅크 카드 FAQ는 두 탭 모두). 근거가 없으면 "".
+- contacts  (본문에 나온 토스 계열 고객센터 번호): 아래 TOSS_CONTACTS에 있는 번호만. 카드사·은행·신용평가사 번호는 넣지 않는다.
 """
 
 from __future__ import annotations
@@ -112,3 +115,50 @@ def shop_domains(doc_path: str) -> list[str]:
         if doc_path.startswith(prefix):
             return [domain]
     return [OTHER]
+
+
+# ---------------------------------------------------------------- 처리 주체·연락처
+
+# 토스 계열 고객센터 번호 → 처리 주체. 본문 문장으로 주인을 확인한 번호만 (근거 FAQ).
+# 본문의 다른 번호(카드사·은행·KCB/NICE 등)는 그 기관 번호라 여기 넣지 않는다.
+# contacts는 「이 문서가 안내하는 번호」라 처리 주체와 다를 수 있다 (faq:6705 「토스뱅크 통장이 지급정지 되었다면 1661-7654」).
+TOSS_CONTACTS: dict[str, str] = {
+    "1599-4905": "토스",          # faq:157 「토스 고객센터(1599-4905)」
+    "1661-4905": "토스",          # faq:437 「토스 고객보호센터(1661-4905)」 (본인 확인 전화)
+    "1661-7654": "토스뱅크",      # faq:1253 「토스뱅크 고객센터(1661-7654)」
+    "1599-7987": "토스증권",      # faq:207 「토스증권 … 전화 : 1599-7987」
+    "1644-2944": "토스쇼핑",      # faq:4705 「토스쇼핑 고객센터(1644-2944)」
+    "1660-1114": "토스모바일",    # faq:4541 「토스모바일 고객센터 1660-1114」
+    "1644-2955": "토스플레이스",  # faq:4461 토스플레이스 탭 「전화상담 : 1644-2955」
+}
+
+# 제목에 이름이 나오면 그 회사가 처리 주체 (「토스쇼핑 배송지를 어떻게 바꾸나요?」)
+_TITLE_SERVICES = ["토스쇼핑", "토스뱅크", "토스증권", "토스모바일"]
+# 그 탭에만 게시된 FAQ는 탭이 곧 주체
+_SINGLE_TAB_SERVICES = {"토스뱅크", "토스페이", "토스플레이스", "토스모바일"}
+
+
+def contacts(body: str) -> list[dict]:
+    return [{"service": s, "phone": p} for p, s in TOSS_CONTACTS.items() if p in body]
+
+
+def faq_service(companies: list[str], title: str, audience: str, domains: list[str], body: str) -> str:
+    named = [s for s in _TITLE_SERVICES if s in title]
+    if len(named) == 1:
+        return named[0]
+    if len(named) > 1:  # 「토스에 개인 추심 요청은? (토스뱅크 및 토스증권은 별도 요청 필요)」
+        return "토스" if "토스" in companies else ""
+    tabs = set(companies)
+    if audience == "consumer" and tabs & _MERCHANT_WORKSPACES:
+        return "토스"  # 결제한 사람의 문의 (faq:5884 「토스 고객센터 1599-4905」로 안내)
+    if len(tabs) == 1 and tabs <= _SINGLE_TAB_SERVICES:
+        return companies[0]
+    if "토스모바일" in tabs:
+        return "토스모바일"
+    if "투자" in domains:  # 투자 = 토스증권 카테고리 (FAQ_CATEGORY_DOMAINS)
+        return "토스증권"
+    if tabs == {"토스", "토스뱅크"}:
+        # 두 탭에 다 게시 — 본문 안내 번호가 한 곳뿐일 때만 그쪽으로, 아니면 판단 보류
+        found = {c["service"] for c in contacts(body)}
+        return found.pop() if len(found) == 1 else ""
+    return "토스" if tabs == {"토스"} else ""

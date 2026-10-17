@@ -10,7 +10,7 @@ from csagent.knowledge.cleaning import (
     is_not_found_page, mark_app_links, normalize_whitespace, strip_gitbook_noise,
 )
 from csagent.knowledge.models import Document
-from csagent.knowledge.taxonomy import faq_audience, faq_domains, shop_domains
+from csagent.knowledge.taxonomy import contacts, faq_audience, faq_domains, faq_service, shop_domains
 
 
 class FaqLoader:
@@ -34,16 +34,20 @@ class FaqLoader:
     @staticmethod
     def _to_document(r: dict) -> Document:
         audience = faq_audience(r["companies"], r["title"])
+        domains = faq_domains(r["category_ids"], r["title"], audience)
+        body = normalize_whitespace(mark_app_links(r["answer"]))
         return Document(
             doc_id=f"faq:{r['id']}",
             source="faq",
             title=r["title"],
-            body=normalize_whitespace(mark_app_links(r["answer"])),
+            body=body,
             url=f"https://support.toss.im/faq/{r['id']}",
             meta={
                 "audience": audience,
                 "companies": r["companies"],
-                "domains": faq_domains(r["category_ids"], r["title"], audience),
+                "domains": domains,
+                "service": faq_service(r["companies"], r["title"], audience, domains, body),
+                "contacts": contacts(body),
                 # 「(2026.02.16 기준 판매종료)」 — 끝난 상품은 안내 대상에서 빼야 한다
                 "discontinued": "판매종료" in r["title"],
                 "view_count": r["view_count"],
@@ -84,6 +88,8 @@ class ShoppingDocLoader:
                     "audience": "seller",
                     "companies": ["토스"],  # 토스쇼핑은 토스(비바리퍼블리카) 서비스
                     "domains": shop_domains(item["file"].removesuffix(".md")),
+                    "service": "토스쇼핑",
+                    "contacts": contacts(body),
                     "discontinued": False,
                 },
             ))
