@@ -1,0 +1,38 @@
+# 실제 테스트 탭 — 아웃바운드 수신자 (에이전트가 거는 전화를 테스터가 셀러로서 받는다).
+# CRM 값은 scenarios/o1_penalty_notice.yaml과 같다. 셀러 인바운드 업무가 생기면 같은 셀러에 상황을 더한다.
+# 실제 전화처럼 받는 쪽(테스터)이 먼저 「여보세요」 하면 에이전트가 이어 말한다.
+
+id: live_happy_store
+name: 행복상회 김민수
+profile: 토스쇼핑 셀러 · 아웃바운드(우리가 거는 전화) · 최근 30일 페널티 7점
+context:
+  direction: outbound
+  audience: seller
+  service: 토스쇼핑
+  companies: [토스]
+  today: 2026-10-12
+  customer:
+    name: 행복상회
+    outbound_task: penalty_notice
+    seller:
+      store_name: 행복상회
+      manager_name: 김민수
+      penalty_points_30d: 7
+      items:
+        - {type: 발송 기한 미준수, points: 3}
+        - {type: CS 처리 미흡, points: 2}
+        - {type: 취소·교환·반품 지연, points: 2}
+
+situations:
+  - id: manager
+    title: 담당자로서 안내 받기
+    desc: 상점 담당자 김민수 본인으로 전화를 받는다. 페널티 안내를 듣고 궁금한 걸 묻는다.
+    related: [seller]
+  - id: not_manager
+    title: 담당자가 아님
+    desc: 전화를 받은 사람은 담당자가 아니다 (직원·가족 등). 담당자는 지금 자리에 없다.
+    related: [seller]
+  - id: objection
+    title: 페널티가 억울함
+    desc: 담당자 본인이다. 발송이 늦은 건 택배사 사정이었다고 생각해 페널티에 이의를 제기하고, 소명하면 어떻게 되는지 캐묻는다.
+    related: [seller]

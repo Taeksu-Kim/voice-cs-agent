@@ -9,21 +9,60 @@
 <body>
   <header class="topbar">
     <h1>상담 에이전트 콘솔</h1>
-    <div class="controls">
-      <select id="scenario"></select>
+    <nav class="tabs">
+      <button type="button" data-show="live" class="on">실제 테스트</button>
+      <button type="button" data-show="demos">데모 시나리오</button>
+      <button type="button" data-show="records">녹화 재생</button>
+    </nav>
+    <div class="controls" data-tab="live">
+      <select id="input-mode" title="고객 발화 입력 방식">
+        <option value="voice">🎙 마이크</option>
+        <option value="text">⌨ 텍스트</option>
+      </select>
+      <label class="check" title="전사 전에 8kHz 전화 대역으로 열화"><input type="checkbox" id="degrade"> 전화 대역</label>
       <button id="start" class="primary">통화 시작</button>
+      <button id="hangup" disabled>끊기</button>
+      <a href="monitor.html" class="navlink">모니터</a>
+    </div>
+    <div class="controls" data-tab="records" hidden>
+      <select id="demo-source" title="기록 폴더 (logs: 웹 통화, runs: 평가)"></select>
+      <select id="demo-rec" title="통화 기록 (🎙 음성 통화 · ⌨ 텍스트)"></select>
+      <button id="demo-play" class="primary">재생</button>
+      <button id="demo-add" title="이 기록을 데모 시나리오 탭 목록에 올린다">데모 목록에 추가</button>
+    </div>
+    <div class="controls" data-tab="demos records" hidden>
+      <button id="demo-back" hidden>← 목록</button>
+      <button id="demo-stop" disabled>정지</button>
     </div>
   </header>
 
-  <main class="layout">
+  <main id="main" class="layout" data-view="pick">
     <section class="call">
-      <div id="customer" class="customer-card muted">시나리오를 고르고 통화를 시작하세요.</div>
+      <div id="demo-badge" class="demo-badge" hidden></div>
+      <div id="info" class="info-panel" data-tab="live"></div>
+      <div id="picker" class="picker" data-tab="live">
+        <h3>1. 발신자</h3><div id="callers" class="callers"></div>
+        <h3>2. 상황 <span class="muted">— 카드에 마우스를 올리면 설명 · 대사는 없으니 설명대로 자유롭게 말하세요</span></h3>
+        <div id="situations" class="situations"></div>
+      </div>
+      <div id="demo-list" class="picker" data-tab="demos" hidden></div>
       <div id="chat" class="chat" aria-live="polite"></div>
-      <form id="composer" class="composer">
+      <form id="composer" class="composer" data-tab="live">
         <input id="utterance" autocomplete="off" placeholder="고객으로서 말하기 (STT 결과처럼 입력)" disabled>
         <button id="send" class="primary" disabled>보내기</button>
         <button id="stop" type="button" disabled title="응답 생성을 중단 (끼어들기)">중단</button>
       </form>
+      <div id="voicebar" class="voicebar" hidden>
+        <span id="vadstate" class="chip">듣는 중</span>
+        <div class="meter"><div id="level"></div></div>
+      </div>
+    </section>
+
+    <section class="bo">
+      <h2>업무 화면 <span class="muted">— 에이전트가 쓴 기능과 넣은 값</span></h2>
+      <div id="bo-customer" class="bo-customer"></div>
+      <div id="bo-empty" class="muted">아직 실행한 기능이 없습니다.</div>
+      <div id="bo-list"></div>
     </section>
 
     <aside class="debug">
@@ -34,6 +73,14 @@
     </aside>
   </main>
 
+  <dialog id="llm-dialog" class="llm-dialog">
+    <header><b id="llm-dialog-title">LLM 호출</b>
+      <form method="dialog"><button>닫기</button></form></header>
+    <div id="llm-dialog-body"></div>
+  </dialog>
+
+  <script src="backoffice.js"></script>
   <script src="app.js"></script>
+  <script src="voice.js"></script>
 </body>
 </html>

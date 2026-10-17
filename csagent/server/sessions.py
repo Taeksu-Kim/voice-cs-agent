@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -18,9 +17,13 @@ class Session:
     id: str
     state: CallState
     scenario_id: str = ""
+    mode: str = "text"           # text(텍스트 콘솔) | voice(실제 테스트 탭, 마이크) — 로그·화면에서 구분
+    situation: str = ""          # 실제 테스트 탭에서 고른 상황 카드 id (녹화 목록에 표시)
     replies: list[AgentReply] = field(default_factory=list)
     disposition: Optional[str] = None
     ended: bool = False
+    saved: bool = False
+    voice_turns: list[dict] = field(default_factory=list)   # 음성 턴별 STT 결과·문장·지연 (데모 재생 원본)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
 
     def record(self, reply: AgentReply) -> None:
@@ -35,8 +38,9 @@ class SessionStore:
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
 
-    def create(self, ctx: CallContext, scenario_id: str = "") -> Session:
-        s = Session(id=uuid.uuid4().hex[:12], state=new_call(ctx), scenario_id=scenario_id)
+    def create(self, ctx: CallContext, scenario_id: str = "", mode: str = "text", situation: str = "") -> Session:
+        state = new_call(ctx)
+        s = Session(id=state.call_id, state=state, scenario_id=scenario_id, mode=mode, situation=situation)   # 세션 id = 통화 id (로그와 같은 값)
         with self._lock:
             self._sessions[s.id] = s
         return s

@@ -1,0 +1,52 @@
+# 실제 테스트 탭 발신자 (csagent/server/callers.py) — 평가(run_eval, scenarios/)에는 들어가지 않는다.
+# 시나리오별 고객은 그 업무 데이터만 있어 다른 걸 물으면 조회가 전부 빈다 → 마이크로 자유롭게 물어볼 수 있게
+# 소비자 업무(S1 배송·S4 송금·S5 카드)의 데이터를 한 사람에게 다 넣었다. 값은 기존 시나리오들에서 가져온 형식.
+# 기준일 2026-10-12(월). 10/9(금)는 한글날 휴일.
+# situations: 테스터가 고르는 상황 설명 — 대사·기대 결과는 없다. related는 화면 정보 패널에 고정해 보일 CRM 값.
+
+id: live_kim_minji
+name: 김민지
+profile: 토스 앱 고객 · 주문 3 · 카드 2 · 송금 2 · 앱 인증 성공
+context:
+  audience: consumer
+  companies: [토스, 토스뱅크]   # 카드에 토스뱅크 체크카드가 있음 (S5와 같은 규칙)
+  today: 2026-10-12
+  customer:
+    name: 김민지
+    auth_result: success
+    orders:
+      - {order_id: "A3001", item: "무선 이어폰", status: "배송완료", shipped_at: "2026-10-07", last_tracking: "2026-10-08 배송완료", eta: "2026-10-08"}
+      - {order_id: "A3002", item: "캠핑 의자", status: "배송중", shipped_at: "2026-10-01", last_tracking: "2026-10-02 집하", eta: "2026-10-06"}
+      - {order_id: "A3003", item: "러닝화", status: "배송중", shipped_at: "2026-10-11", last_tracking: "", eta: "2026-10-14"}
+    cards:
+      - {card_id: C1, name: 토스유스카드, last4: "1234"}
+      - {card_id: C2, name: 토스뱅크 체크카드, last4: "5678"}
+    transfers:
+      - {transfer_id: T1, to_name: 김*수, bank: 국민은행, amount: 300000, date: "2026-10-11 14:20"}
+      - {transfer_id: T2, to_name: 이*영, bank: 토스뱅크, amount: 50000, date: "2026-10-09 09:10"}
+
+situations:
+  - id: delivery_stuck
+    title: 배송이 멈춤
+    desc: 토스쇼핑에서 산 캠핑 의자가 10/2 집하 이후 배송 기록이 그대로다. 도착 예정일(10/6)도 지났다. 언제 오는지, 어떻게 해야 하는지 묻는다.
+    related: [order:A3002]
+  - id: no_tracking
+    title: 송장 조회가 안 됨
+    desc: 어제(10/11) 발송됐다는 러닝화가 배송 조회를 눌러도 기록이 하나도 없다. 제대로 보낸 게 맞는지 묻는다.
+    related: [order:A3003]
+  - id: delivered_not_received
+    title: 배송완료인데 못 받음
+    desc: 무선 이어폰이 10/8 배송완료로 떠 있는데 집 앞에도 경비실에도 없다. 어떻게 해야 하는지 묻는다.
+    related: [order:A3001]
+  - id: card_lost
+    title: 카드 분실
+    desc: 토스유스카드를 잃어버렸다. 어디서 잃어버렸는지 모르고 누가 쓸까 걱정된다. 막아 달라고 한다.
+    related: [card:C1]
+  - id: card_maybe_home
+    title: 카드를 어디 뒀는지 모름
+    desc: 체크카드가 지갑에 없다. 집에 있을 수도 있는데 확실하지 않다. 일단 못 쓰게 해 두고 싶다.
+    related: [card:C2]
+  - id: wrong_transfer
+    title: 송금을 잘못 보냄
+    desc: 어제(10/11) 오후에 30만 원을 엉뚱한 사람에게 보냈다. 돌려받을 수 있는지, 무엇을 해야 하는지 묻는다.
+    related: [transfer:T1]

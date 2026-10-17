@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>에이전트 모니터</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>에이전트 모니터</h1>
+    <div class="controls">
+      <select id="source" title="로그 폴더 (평가 실행 runs/* · 서버 logs/*)"></select>
+      <label class="muted"><input type="checkbox" id="live" checked> 3초마다 갱신</label>
+      <a href="index.html" class="navlink">상담 콘솔</a>
+    </div>
+  </header>
+
+  <main class="monitor">
+    <div id="updated" class="muted">불러오는 중…</div>
+    <div id="tiles" class="tiles"></div>
+    <section id="eval" class="panel" hidden><h2>평가 — 시나리오별</h2><div></div></section>
+    <section class="panel"><h2>LLM — 출처별</h2><div id="llm"></div></section>
+    <section class="panel"><h2>사건 · 도구</h2><div id="incidents"></div></section>
+    <section class="panel"><h2>최근 경고</h2><div id="warnings"></div></section>
+  </main>
+
+  <dialog id="llm-dialog" class="llm-dialog">
+    <header><b id="llm-dialog-title">LLM 호출</b>
+      <form method="dialog"><button>닫기</button></form></header>
+    <div id="llm-dialog-body"></div>
+  </dialog>
+
+  <script src="monitor.js"></script>
+</body>
+</html>
