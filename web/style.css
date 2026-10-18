@@ -38,6 +38,7 @@ body {
   padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
 }
 .topbar h1 { font-size: 16px; margin: 0; }
+.unofficial { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
 .controls { display: flex; gap: 8px; flex-wrap: wrap; }
 select, input, button {
   font: inherit; color: var(--text); background: var(--panel);
