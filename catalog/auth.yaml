@@ -1,0 +1,13 @@
+# 고객 인증 서비스 — 도메인 API /auth/*
+# effects: authenticate — 결과 status가 success면 에이전트가 인증 상태를 켜고, 아니면 실패 횟수를 올린다 (docs/08 4-2)
+- name: request_app_auth
+  version: 1
+  owner: auth
+  status: active
+  description: "고객 휴대폰으로 앱 본인 인증 요청 (결과가 바로 돌아옴)"
+  endpoint: /auth/app_auth
+  params:
+    customer_id: {type: string, source: context}
+  risk: notify
+  effects: [authenticate]
+  approved_by: platform

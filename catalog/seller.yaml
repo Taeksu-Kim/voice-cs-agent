@@ -1,0 +1,12 @@
+# 셀러 계정·상태 서비스 — 도메인 API /seller/* (O1·O2 공용)
+- name: lookup_seller
+  version: 1
+  owner: seller
+  status: active
+  description: "통화 상대 셀러의 상점 정보·페널티·광고 이용 조회"
+  endpoint: /seller/lookup
+  params:
+    customer_id: {type: string, source: context}
+  risk: read
+  requires_contact: true
+  approved_by: platform

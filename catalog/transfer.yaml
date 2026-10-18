@@ -1,0 +1,11 @@
+# 송금 서비스 — 도메인 API /transfer/*
+- name: lookup_transfers
+  version: 1
+  owner: transfer
+  status: active
+  description: "본인의 최근 송금 내역 조회"
+  endpoint: /transfer/transfers/lookup
+  params:
+    customer_id: {type: string, source: context}
+  risk: read
+  approved_by: platform

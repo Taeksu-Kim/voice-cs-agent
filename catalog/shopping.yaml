@@ -1,0 +1,12 @@
+# 쇼핑 주문 서비스 — 도메인 API /shopping/* (docs/08 4-2 항목 스키마)
+- name: lookup_orders
+  version: 1
+  owner: shopping
+  status: active
+  description: "통화 중인 본인의 토스쇼핑 주문·배송 상태 조회 (다른 사람 주문은 조회 불가). order_id를 주면 그 주문만, 비우면 본인 주문 전체"
+  endpoint: /shopping/orders/lookup
+  params:
+    order_id: {type: string, source: model, required: false, description: "고객이 말한 주문번호 (말하지 않았으면 비움)"}
+    customer_id: {type: string, source: context}
+  risk: read
+  approved_by: platform

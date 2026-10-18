@@ -1,0 +1,24 @@
+# 알림·예약 서비스 — 도메인 API /notify/*
+- name: send_app_link
+  version: 1
+  owner: notify
+  status: active
+  description: "고객 휴대폰으로 토스 앱 화면 링크 문자 발송"
+  endpoint: /notify/app_link
+  params:
+    target: {type: string, source: model, required: true, description: "화면 이름 (예: 주문 내역)"}
+    customer_id: {type: string, source: context}
+  risk: notify
+  approved_by: platform
+
+- name: schedule_callback
+  version: 1
+  owner: notify
+  status: active
+  description: "재통화 예약"
+  endpoint: /notify/callback
+  params:
+    when: {type: string, source: model, required: true, description: "희망 시각"}
+    customer_id: {type: string, source: context}
+  risk: notify
+  approved_by: platform

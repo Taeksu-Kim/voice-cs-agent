@@ -1,0 +1,43 @@
+# 카드 서비스 — 도메인 API /card/*
+- name: lookup_cards
+  version: 1
+  owner: card
+  status: active
+  description: "본인 카드 목록 조회 (카드 이름·끝 4자리·상태)"
+  endpoint: /card/cards/lookup
+  params:
+    customer_id: {type: string, source: context}
+  risk: read
+  approved_by: platform
+
+- name: suspend_card
+  version: 1
+  owner: card
+  status: active
+  description: "카드 일시정지 (토스 비밀번호로 해제 가능)"
+  endpoint: /card/suspend
+  params:
+    card_id: {type: string, source: model, required: true, description: "lookup_cards 결과의 card_id (예: C1)",
+              grounded_by: lookup_cards.cards.card_id}
+    customer_id: {type: string, source: context}
+  risk: execute
+  requires_auth: true
+  requires_confirmation: true
+  target_keys: [card_id]
+  approved_by: platform
+
+- name: report_card_lost
+  version: 1
+  owner: card
+  status: active
+  description: "카드 분실신고 (해제하려면 실물 카드 CVC 필요)"
+  endpoint: /card/report_lost
+  params:
+    card_id: {type: string, source: model, required: true, description: "lookup_cards 결과의 card_id (예: C1)",
+              grounded_by: lookup_cards.cards.card_id}
+    customer_id: {type: string, source: context}
+  risk: execute
+  requires_auth: true
+  requires_confirmation: true
+  target_keys: [card_id]
+  approved_by: platform

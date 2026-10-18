@@ -1,0 +1,16 @@
+# 광고 영업 서비스 — 도메인 API /ads/* (O2, 2단계)
+- name: record_lead
+  version: 1
+  owner: ads
+  status: active
+  description: "아웃바운드: 파악한 니즈·예산·관심도·등급 기록"
+  endpoint: /ads/leads
+  params:
+    need: {type: string, source: model, required: false, description: "니즈"}
+    budget: {type: string, source: model, required: false, description: "예산 범위"}
+    interest: {type: string, source: model, required: false, description: "관심도"}
+    grade: {type: string, source: model, required: false, description: "A|B|C"}
+    customer_id: {type: string, source: context}
+  risk: notify
+  requires_contact: true
+  approved_by: platform
