@@ -18,7 +18,7 @@ from csagent.agent.contracts import AgentEvent, AgentReply, ToolCall
 from csagent.agent.guardrails.contacts import ContactBook, SpeechScreen, mask_unlisted, strip_unlisted
 from csagent.agent.guardrails.gate import ExecutionGate
 from csagent.agent.state import CallState
-from csagent.agent.streaming import SayExtractor
+from csagent.agent.streaming import SayExtractor, announced_done
 from csagent.agent.tools.registry import ToolRegistry
 from csagent.llm import ChatLLM, LLMResult, parse_json
 from csagent.obs import event
@@ -209,6 +209,7 @@ class TurnLoop:
                     and call.result.get("status") == "pending":
                 stop = True  # 이 스텝의 말이 곧 질문이다 — 결과를 받고 또 말하면 같은 질문을 반복한다
             stop = stop or held == "stop"
+            done_line = call.result.get("ok") and announced_done(call.name, " ".join(said))
             if not call.result.get("ok") and said and said[-1] == say and not held \
                     and call.result.get("blocked") != "result_unheard":
                 said.pop()   # 도구가 실패·차단된 스텝의 말은 그 도구가 된다는 전제였으므로 버린다 (재시도 스텝이 다시 말함)
@@ -216,6 +217,10 @@ class TurnLoop:
             yield AgentEvent("tool_call", {"name": call.name, "args": call.args})
             yield AgentEvent("tool_result", {"name": call.name, "result": call.result})
             self._apply_disposition(reply, call)
+            if done_line:   # 미리 알린 발송·예약이 됐다 — 결과 스텝(LLM) 없이 완료 한마디로 턴을 끝낸다
+                said.append(done_line)
+                yield AgentEvent("delta", {"text": done_line})
+                break
             if stop:
                 break
             if stage is not None and (new := self._enter_step(state, policy, stage)) is not stage:

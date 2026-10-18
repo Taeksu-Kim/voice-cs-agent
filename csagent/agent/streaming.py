@@ -62,3 +62,20 @@ class SayExtractor:
                 out.append(_ESCAPES.get(nxt, nxt))
                 self._pos += 2
         return "".join(out)
+
+
+
+# 발송·예약을 「~해 드릴게요」로 알린 뒤 도구가 성공하면 결과 스텝에서 「~해 드렸습니다」와 앞의 안내를 또 말해
+# 길어졌다 — 지시문으로는 안 막혔다 (o1_h6, runs/20261018_075903_C). 완료 문장만 거르면 고객이 안 보낸 줄 알고
+# 다시 요청해 두 번 보냈다 (s4_b0_stranger, runs/20261018_100842_C) → 결과 스텝 대신 짧은 완료 한마디를 코드가 붙인다.
+# 「알림」은 표면 형태만 본다 (말의 의미 판단이 아니라 도구별로 정해 둔 표현).
+_ANNOUNCED = {
+    "send_app_link": (re.compile(r"(보내|발송해)\s?드릴|보낼게"), "보내 드렸어요."),
+    "schedule_callback": (re.compile(r"예약해\s?드릴|예약할게"), "예약해 두었어요."),
+}
+
+
+def announced_done(tool: str, said: str) -> Optional[str]:
+    """이번 턴에 이미 tool을 하겠다고 말했으면, 도구 성공 뒤 붙일 완료 한마디를 돌려준다."""
+    pair = _ANNOUNCED.get(tool)
+    return pair[1] if pair and pair[0].search(said) else None

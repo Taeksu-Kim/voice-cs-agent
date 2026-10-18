@@ -129,6 +129,17 @@ def test_say_extractor_streams_only_say_value():
     assert out == '배송은 "평균" 3일\n이에요 가' and ex.done
 
 
+def test_announced_notify_ends_turn_with_short_done_line():
+    from csagent.agent.streaming import announced_done
+    assert announced_done("send_app_link", "확인해 볼게요.") is None        # 미리 알리지 않았으면 결과 스텝이 말한다
+    assert announced_done("request_app_auth", "인증 요청을 보낼게요.") is None   # 결과를 말해야 하는 도구는 대상 아님
+    llm = ScriptedLLM([_say("", {"name": "lookup_orders", "args": {}}),
+                       _say("앱 링크 보내 드릴게요.", {"name": "send_app_link", "args": {"target": "주문 내역"}}),
+                       _say("보내 드렸습니다. 링크에서 확인해 주세요.")])   # 불리면 안 되는 결과 스텝
+    reply = make_agent(llm).respond(new_call(CTX), TurnInput("주문 내역 링크 보내 주세요"))
+    assert reply.text == "앱 링크 보내 드릴게요. 보내 드렸어요."
+
+
 def test_respond_stream_event_order():
     llm = ScriptedLLM([_say("", {"name": "lookup_orders", "args": {}}), _say("배송중이에요.")])
     events = list(make_agent(llm).respond_stream(new_call(CTX), TurnInput("택배요")))
