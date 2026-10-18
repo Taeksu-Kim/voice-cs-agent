@@ -13,7 +13,7 @@ from csagent.agent.guardrails.gate import ExecutionGate
 from csagent.agent.loop import TurnLoop
 from csagent.agent.router import Router
 from csagent.agent.workers.specs import WORKERS
-from csagent.agent.tools.mock import default_registry
+from csagent.agent.tools.registry import ToolRegistry
 from csagent.config import Settings, load_settings
 from csagent.llm import ChatLLM, OpenAICompatLLM
 from csagent.llm_log import LLMCallLog, LoggedLLM
@@ -55,10 +55,11 @@ def load_contacts(s: Optional[Settings] = None) -> Optional[ContactBook]:
 
 
 def build_agent(kind: Optional[str] = None, s: Optional[Settings] = None, *,
-                log: Optional[LLMCallLog] = None):
-    """kind: A0(단일·게이트 없음) | A1(단일·게이트) | C(컨트롤러+워커·게이트, 기본). 환경변수 AGENT로도 지정."""
+                log: Optional[LLMCallLog] = None, tools: ToolRegistry):
+    """kind: A0(단일·게이트 없음) | A1(단일·게이트) | C(컨트롤러+워커·게이트, 기본). 환경변수 AGENT로도 지정.
+    tools: 도구 스택(csagent/stack.py)의 레지스트리 — 통화는 같은 스택의 open()으로 열어야 한다."""
     kind = (kind or os.environ.get("AGENT", "C")).upper().rstrip("'")
-    retriever, llm, tools = build_retriever(True, s), build_llm(s, log=log), default_registry()
+    retriever, llm = build_retriever(True, s), build_llm(s, log=log)
     if kind == "C":
         router_llm = llm.with_source("router") if isinstance(llm, LoggedLLM) else llm
         return CallController(TurnLoop(retriever, llm, tools, gate=ExecutionGate(), contacts=load_contacts(s)),

@@ -204,7 +204,7 @@ class TurnLoop:
 
             call, feedback, stop = self._run_tool(state, tool, policy, {**(slots or {}), **outcome.slots})
             self._log_tool(state, policy, call)
-            spec = self.tools.get(call.name)
+            spec = self.tools.for_call(state).get(call.name)
             if call.result.get("ok") and spec and spec.asks_customer and say \
                     and call.result.get("status") == "pending":
                 stop = True  # 이 스텝의 말이 곧 질문이다 — 결과를 받고 또 말하면 같은 질문을 반복한다
@@ -282,15 +282,21 @@ class TurnLoop:
         name, args = tool.get("name", ""), tool.get("args") or {}
         call = ToolCall(name, args)
         state.trace.add(state.turn, "tool_request", {"name": name, "args": args, "worker": policy.name})
-        spec = self.tools.get(name)
+        tools = self.tools.for_call(state)
+        spec = tools.get(name)
         if spec is None:
             call.result = {"ok": False, "error": f"unknown_tool:{name}"}
             return call, f"[도구 오류] 없는 도구입니다: {name}", False
 
-        if spec.precheck and (err := spec.precheck(state, args)):
+        names = self._tools_for(state, policy)
+        allowed = set(names) if names is not None else None
+        # 이 워커가 쓸 수 없는 도구면 근거 검증을 건너뛰고 게이트가 not_allowed로 막는다 —
+        # 「먼저 조회하라」는 근거 검증 피드백이 이 워커에 없는 도구 쪽으로 모델을 이끌지 않게
+        in_policy = self.gate is None or allowed is None or name in allowed
+        if in_policy and spec.precheck and (err := spec.precheck(state, args)):
             # 대상 값이 틀렸으면 게이트·확인 질문 전에 돌려보낸다 (틀린 대상으로 고객 동의를 받지 않게)
             call.result = {"ok": False, "blocked": "precheck", "error": err}
-            state.trace.add(state.turn, "precheck", {"name": name, "error": err})
+            state.trace.add(state.turn, "precheck", {"name": name, "error": err, "kind": "ungrounded_args"})
             return call, f"[인자 오류] {err}. 아직 아무것도 실행하지 않았습니다. 올바른 값으로 다시 호출하세요.", False
 
         for rule in policy.slot_rules:
@@ -301,8 +307,6 @@ class TurnLoop:
                 return call, f"[실행 차단] {rule.message.format(value=value)}", False
 
         if self.gate is not None:
-            tools = self._tools_for(state, policy)
-            allowed = set(tools) if tools is not None else None
             decision = self.gate.check(state, spec, args, allowed_tools=allowed)
             state.trace.add(state.turn, "gate", {"name": name, "allowed": decision.allowed,
                                                  "reason": decision.reason})
@@ -318,7 +322,7 @@ class TurnLoop:
                 call.result = {"ok": False, "blocked": decision.reason}
                 return call, f"[실행 차단] {decision.message}", False
 
-        outcome = self.tools.run(state, name, args)
+        outcome = tools.run(state, name, args)
         call.result = {"ok": outcome.ok, **outcome.result,
                        **({"error": outcome.error} if outcome.error else {})}
         state.trace.add(state.turn, "tool_result", {"name": name, "risk": spec.risk, **call.result})
@@ -357,7 +361,7 @@ class TurnLoop:
         지시문으로 금지돼 있어도 샘 (10/15~17 기록 271통화 중 19건, 전부 「?」로 끝남) → 코드로 막는다.
         "" 그대로 진행 | "stop" 조회는 하고 턴 종료 (결과는 다음 턴에 씀) | "drop" 실행하지 않고 턴 종료."""
         name, args = tool.get("name", ""), tool.get("args") or {}
-        spec = self.tools.get(name)
+        spec = self.tools.for_call(state).get(name)
         if not say.endswith("?") or spec is None or spec.asks_customer:
             return ""
         state.trace.add(state.turn, "question_hold", {"name": name, "args": args,
@@ -372,7 +376,7 @@ class TurnLoop:
         """말로 물은 실행 동의를 확인 질문으로 등록한다 — 게이트가 「동의만 없어서」 막을 실행일 때만.
         인증 전·대상 오류·허용 안 된 도구면 등록하지 않는다 (동의를 받아도 실행할 수 없는 질문이다)."""
         name, args = ask.get("name", ""), ask.get("args") or {}
-        spec = self.tools.get(name)
+        spec = self.tools.for_call(state).get(name)
         reason = ""
         if spec is None or not spec.requires_confirmation:
             reason = "no_confirmation_needed"
@@ -489,7 +493,7 @@ class TurnLoop:
         p_ = policy.protocol
         system = prompts.SYSTEM.format(
             service=state.ctx.service,
-            task=p_.task_text(p_.current(state)) if p_ is not None else policy.task, tools=self.tools.prompt(names), pending=pending,
+            task=p_.task_text(p_.current(state)) if p_ is not None else policy.task, tools=self.tools.for_call(state).prompt(names), pending=pending,
             queued=", ".join(t.name for t in state.queue) or "(없음)",
             slots=json.dumps(slots, ensure_ascii=False) if slots else "(없음)",
             tool_results=self._earlier_tool_results(state))

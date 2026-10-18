@@ -37,6 +37,9 @@ class Settings:
     llm_url: str
     llm_model: str
     voice_url: str
+    tool_server_url: str
+    domain_url: str
+    tool_timeout_s: float
 
 
 def load_settings() -> Settings:
@@ -58,4 +61,8 @@ def load_settings() -> Settings:
         llm_url=env("LLM_URL", "http://localhost:8002/v1"),
         llm_model=env("LLM_MODEL", "qwen3.8-27b-redhat-int4"),
         voice_url=env("VOICE_URL", "http://localhost:8013"),   # scripts/voice_server.py (STT·TTS)
+        # 도구 서버(MCP)·도메인 API — docs/08. scripts/run_tools.py가 둘 다 띄운다
+        tool_server_url=env("TOOL_SERVER_URL", "http://127.0.0.1:8021/mcp"),
+        domain_url=env("DOMAIN_URL", "http://127.0.0.1:8020"),
+        tool_timeout_s=float(env("TOOL_TIMEOUT_S", "3")),   # 음성 지연 예산 기준 출발값 — 홉 지연 실측 후 조정
     )

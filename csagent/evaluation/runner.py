@@ -48,8 +48,18 @@ class Transcript:
         }
 
 
-def run_scenario(agent: Agent, customer: CustomerSimulator, scenario: Scenario) -> Transcript:
-    tr = Transcript(scenario.id, new_call(scenario.context), agent_name=getattr(agent, "name", ""))
+def run_scenario(agent: Agent, customer: CustomerSimulator, scenario: Scenario, stack: Any = None) -> Transcript:
+    """stack(csagent/stack.py)을 주면 콜 인프라로 통화를 연다 — 시나리오 업무 데이터를 도메인 API에 심고 끝나면 지운다."""
+    state = stack.open(scenario.context) if stack is not None else new_call(scenario.context)
+    tr = Transcript(scenario.id, state, agent_name=getattr(agent, "name", ""))
+    try:
+        return _converse(agent, customer, scenario, tr)
+    finally:
+        if stack is not None:
+            stack.close(state)
+
+
+def _converse(agent: Agent, customer: CustomerSimulator, scenario: Scenario, tr: Transcript) -> Transcript:
     for _ in range(scenario.max_turns):
         utterance = customer.next(scenario, tr.state.history)
         if utterance is None:

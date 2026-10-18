@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from csagent.config import ROOT
 from csagent.agent.prompts import BASELINE_TASK
 from csagent.agent.workers.specs import WORKERS
-from csagent.agent.tools.mock import default_registry
 from csagent.factory import build_agent, build_llm
+from csagent.stack import remote_stack
 from csagent.llm_log import LLMCallLog
 from csagent.obs import LLM_CALLS_FILE, event, log_context, setup_logging
 from csagent.evaluation.runner import run_scenario
@@ -44,15 +44,22 @@ def main() -> None:
                     help="시나리오 폴더 (보류 세트 등). 여러 개면 한 실행에서 모두 돈다")
     args = ap.parse_args()
 
+    # 기동 헬스체크 (docs/08 8절) — 도구 없이 돌면 결과가 전부 오염되므로 결과 폴더를 만들기 전에 끝낸다
+    stack = remote_stack()
     agent_kind = args.agent.upper().rstrip("'")
     out_dir = ROOT / "runs" / f"{datetime.now():%Y%m%d_%H%M%S}_{agent_kind}"
     out_dir.mkdir(parents=True)
     setup_logging(out_dir)
     log = LLMCallLog(out_dir / LLM_CALLS_FILE)   # 모든 LLM 호출의 입출력 (trace의 call_id로 찾는다)
     print(f"결과 폴더 {out_dir.relative_to(ROOT)}", flush=True)
+    # 버전 기록 (docs/08 9절) — 결과가 달라졌을 때 카탈로그 변경 때문인지 구분
+    meta = {"args": vars(args), **stack.versions()}
+    (out_dir / "run_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    if stack.tools.warnings:
+        print(f"!! 도구 경고: {stack.tools.warnings}", flush=True)
 
-    tools = default_registry()
-    agent = build_agent(args.agent, log=log)
+    tools = stack.tools
+    agent = build_agent(args.agent, log=log, tools=tools)
     customer_llm = build_llm(log=log, source="customer")
     instructions = {"baseline": BASELINE_TASK, **{n: w.policy.task for n, w in WORKERS.items()}}
     judge = None if args.no_judge else LLMJudge(build_llm(log=log, source="judge"), instructions)
@@ -64,7 +71,7 @@ def main() -> None:
             for rep in range(args.repeat):
                 with log_context(scenario=sc.id, repeat=rep):
                     try:
-                        tr = run_scenario(agent, LLMCustomer(customer_llm), sc)
+                        tr = run_scenario(agent, LLMCustomer(customer_llm), sc, stack)
                         sco = score(sc, tr, tools, judge)
                     except Exception as e:
                         # LLM 재시도(csagent/llm.py)까지 실패한 경우 — 이 시나리오만 건너뛴다.

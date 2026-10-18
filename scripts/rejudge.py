@@ -27,8 +27,8 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from csagent.agent.prompts import BASELINE_TASK
-from csagent.agent.tools.mock import default_registry
 from csagent.agent.trace import Trace, TraceEvent
+from csagent.stack import offline_registry
 from csagent.agent.workers.specs import WORKERS
 from csagent.config import ROOT
 from csagent.evaluation.procedure import audit
@@ -63,7 +63,7 @@ def original_verdicts(row: dict, n_turns: int) -> dict[str, bool | None]:
 
 def judge_row(llm, instructions, sc, row: dict, k: int, shuffle: int) -> tuple[list[dict], list[dict]]:
     tr = saved_transcript(row)
-    proc = audit(tr.state.trace, default_registry())
+    proc = audit(tr.state.trace, offline_registry())   # 저장된 통화 — 실행 없이 위험도·실행 조건만 본다
     verdicts: dict[str, list] = defaultdict(list)
     for v in range(k + shuffle):
         judge = LLMJudge(llm, instructions, order_seed=None if v < k else v)

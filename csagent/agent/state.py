@@ -74,6 +74,7 @@ class CallState:
     end_blocked_turn: Optional[int] = None   # 미착수 용건 때문에 종료를 막은 턴 (한 번만 막는다)
     acted_turn: Optional[int] = None      # 실행·발송 도구가 마지막으로 성공한 턴 (그 턴엔 결과를 알리고 끊지 않는다)
     trace: Trace = field(default_factory=Trace)
+    tool_snapshot: Optional[Any] = field(default=None, repr=False)   # 이 통화가 쓰는 도구 목록 (MCP 리로드와 무관하게 고정)
 
     # -- 재확인 --
 

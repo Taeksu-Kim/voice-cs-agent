@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from csagent.agent.contracts import AgentReply, CallContext
 from csagent.agent.interface import new_call
@@ -34,12 +34,14 @@ class Session:
 
 
 class SessionStore:
-    def __init__(self) -> None:
+    def __init__(self, opener: Callable[[CallContext], CallState] = new_call) -> None:
+        """opener: 통화를 여는 함수 — 도구 스택을 쓰면 stack.open (업무 데이터를 도메인 API에 심는다)."""
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
+        self._opener = opener
 
     def create(self, ctx: CallContext, scenario_id: str = "", mode: str = "text", situation: str = "") -> Session:
-        state = new_call(ctx)
+        state = self._opener(ctx)
         s = Session(id=state.call_id, state=state, scenario_id=scenario_id, mode=mode, situation=situation)   # 세션 id = 통화 id (로그와 같은 값)
         with self._lock:
             self._sessions[s.id] = s

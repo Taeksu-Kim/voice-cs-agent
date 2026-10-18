@@ -28,7 +28,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Iterator, Literal, Optional
+from typing import Any, Callable, Iterator, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
@@ -76,12 +76,13 @@ class TTSRequest(BaseModel):
 def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller] = (),
                web_dir: Optional[Path] = ROOT / "web", log_dir: Optional[Path] = None,
                root: Path = ROOT, voice_url: Optional[str] = None,
-               make_voice: Optional[Callable] = None) -> FastAPI:
+               make_voice: Optional[Callable] = None, stack: Any = None) -> FastAPI:
     """log_dir: 이 서버의 로그 폴더 (끝난 통화 저장·LLM 원문 조회 기본값). None이면 통화를 파일에 남기지 않는다.
     callers: 실제 테스트 탭 발신자 — 세션은 시나리오처럼 열린다 (Caller.to_scenario).
-    voice_url: scripts/voice_server.py 주소 — 없으면 음성 통화 불가. make_voice는 테스트용 (VoiceClient·Endpointer 대체)."""
+    voice_url: scripts/voice_server.py 주소 — 없으면 음성 통화 불가. make_voice는 테스트용 (VoiceClient·Endpointer 대체).
+    stack: 도구 스택(csagent/stack.py) — 세션은 stack.open으로 열린다 (업무 데이터를 도메인 API에 심음)."""
     app = FastAPI(title="customer-service-agent")
-    store = SessionStore()
+    store = SessionStore(stack.open) if stack is not None else SessionStore()
     scenarios = [c.to_scenario() for c in callers] + list(scenarios)
     by_id = {s.id: s for s in scenarios}
     callers_by_id = {c.id: c for c in callers}
@@ -146,7 +147,24 @@ def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller]
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"ok": True, "agent": getattr(agent, "name", ""), "scenarios": len(scenarios)}
+        tools = {"catalog": stack.tools.catalog_digest, "warnings": stack.tools.warnings} if stack is not None else None
+        return {"ok": True, "agent": getattr(agent, "name", ""), "scenarios": len(scenarios), "tools": tools}
+
+    @app.post("/api/tools/reload")
+    def reload_tools() -> dict:
+        """도구 서버의 tools/list를 다시 받는다 (docs/08 4-1) — 진행 중인 통화는 자기 스냅샷을 계속 쓴다.
+        도구 서버 쪽 카탈로그 리로드(POST /reload)를 먼저 해 둘 것."""
+        if stack is None:
+            raise HTTPException(400, "도구 스택 없이 뜬 서버")
+        from csagent.agent.workers.specs import WORKERS
+        return {**stack.tools.reload(), "missing_for_workers": stack.tools.missing_for(WORKERS)}
+
+    @app.get("/api/sessions/{session_id}/crm")
+    def session_crm(session_id: str) -> dict:
+        """상담 화면의 고객 정보 — 도메인 API의 현재 데이터 (실행 결과가 반영된 상태, docs/08 11-1 6번)."""
+        s = _session(store, session_id)
+        data = stack.fixtures.get(s.state.ctx.customer_id) if stack is not None else None
+        return {"customer_id": s.state.ctx.customer_id, "data": data}
 
     @app.get("/api/scenarios")
     def list_scenarios() -> list[dict]:
@@ -326,10 +344,13 @@ def create_default_app() -> FastAPI:
     llm_log = LLMCallLog(log_dir / LLM_CALLS_FILE)
     from csagent.server.callers import load_callers
 
+    from csagent.stack import remote_stack
+
+    stack = remote_stack()   # 도구 서버·도메인 API가 떠 있어야 한다 (scripts/run_tools.py) — 없으면 여기서 실패
     # scenarios_live/: 실제 테스트 탭 발신자 (평가에는 안 들어감)
-    return create_app(build_agent(log=llm_log), load_scenarios(ROOT / "scenarios"),
+    return create_app(build_agent(log=llm_log, tools=stack.tools), load_scenarios(ROOT / "scenarios"),
                       callers=load_callers(ROOT / "scenarios_live"), log_dir=log_dir,
-                      voice_url=load_settings().voice_url)
+                      voice_url=load_settings().voice_url, stack=stack)
 
 
 def _session(store: SessionStore, session_id: str):

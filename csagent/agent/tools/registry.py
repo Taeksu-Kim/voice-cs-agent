@@ -33,6 +33,7 @@ class ToolSpec:
     target_keys: tuple[str, ...] = ()                       # 재확인·중복 판정에 쓰는 인자
     asks_customer: bool = False                             # 고객에게 질문을 거는 도구 → 이 스텝의 말로 턴을 끝낸다
     choices: dict[str, tuple[str, ...]] = field(default_factory=dict)  # 값이 정해진 인자 → 허용값
+    required: tuple[str, ...] = ()                          # 빠지면 실행 전에 돌려보내는 인자 (카탈로그 inputSchema.required)
     precheck: Optional[Callable[[Any, dict], Optional[str]]] = None    # 대상 값 검사 (확인 질문 전에 돈다) → 오류 문구
     fn: Optional[ToolFn] = None
 
@@ -73,6 +74,10 @@ class ToolRegistry:
     def prompt(self, names: Optional[list[str]] = None) -> str:
         return "\n".join(self._specs[n].prompt_line() for n in (names or self.names()) if n in self._specs)
 
+    def for_call(self, state: CallState) -> "ToolRegistry":
+        """이 통화가 쓸 도구 목록. 고정 목록이면 자기 자신 — 바뀌는 목록(MCP)은 통화별 스냅샷을 돌려준다 (agent/tools/remote.py)."""
+        return self
+
     def run(self, state: CallState, name: str, args: dict[str, Any]) -> ToolOutcome:
         """도구 실행 — 인자 오류·백엔드 오류를 예외 대신 실패 결과로 돌려준다."""
         spec = self._specs.get(name)
@@ -81,6 +86,9 @@ class ToolRegistry:
         unknown = set(args) - set(spec.params)
         if unknown:
             return ToolOutcome(False, error=f"bad_args:{sorted(unknown)} (인자: {', '.join(spec.params) or '없음'})")
+        missing = [k for k in spec.required if args.get(k) in (None, "")]
+        if missing:
+            return ToolOutcome(False, error=f"missing_args:{missing} (필수 인자)")
         for k, allowed in spec.choices.items():
             if k in args and args[k] not in allowed:
                 return ToolOutcome(False, error=f"bad_value:{k}={args[k]} (허용: {', '.join(allowed)})")

@@ -21,8 +21,9 @@ class CallContext:
     audience: str = "consumer"
     companies: tuple[str, ...] = ()
     service: str = "토스"                                     # 받는·거는 회선의 회사 (인사말·자기소개 주체)
-    customer: dict[str, Any] = field(default_factory=dict)  # 가짜 CRM: 이름·주문 등
+    customer: dict[str, Any] = field(default_factory=dict)  # 통화 컨텍스트: 이름·아웃바운드 목적 (업무 데이터는 도메인 API에)
     today: str = ""                                          # 시나리오 기준 날짜
+    customer_id: str = ""                                    # 도메인 API의 고객 키 — 콜 인프라가 통화 시작 때 정한다 (csagent/callinfra.py)
 
 
 @dataclass

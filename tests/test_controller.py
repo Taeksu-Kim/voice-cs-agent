@@ -3,10 +3,9 @@ import json
 from csagent.agent.contracts import CallContext, TurnInput
 from csagent.agent.controller import CallController
 from csagent.agent.guardrails.gate import ExecutionGate
-from csagent.agent.interface import new_call
 from csagent.agent.loop import TurnLoop
 from csagent.agent.router import Router
-from csagent.agent.tools.mock import default_registry
+from tests.local import TOOLS, call, fixture, run_call
 from csagent.agent.workers.specs import WORKERS
 from csagent.llm import ScriptedLLM
 from tests.test_agent_evaluation import FakeRetriever
@@ -26,7 +25,7 @@ def _route(task):
 
 def _controller(outputs):
     llm = ScriptedLLM(outputs)
-    loop = TurnLoop(FakeRetriever(), llm, default_registry(), gate=ExecutionGate())
+    loop = TurnLoop(FakeRetriever(), llm, TOOLS, gate=ExecutionGate())
     return CallController(loop, Router(llm, WORKERS), WORKERS), llm
 
 
@@ -36,7 +35,7 @@ def test_routes_inbound_and_keeps_task_without_rerouting():
         _out(say="많이 놀라셨죠. 어떤 카드인가요?", slots={"lost": True}),
         _out(say="토스유스카드 맞으시죠?"),          # 2턴: 라우터 호출 없이 바로 워커
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드를 잃어버렸어요"))
     assert s.active.name == "card_loss" and s.active.slots == {"lost": True}
     c.respond(s, TurnInput("유스카드요"))
@@ -52,7 +51,7 @@ def test_switch_hides_first_worker_speech_and_queues_previous_task():
         _route("card_loss"),
         _out(say="카드를 잃어버리셨군요. 확인해 볼게요."),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("배송 며칠 걸려요"))
     events = list(c.respond_stream(s, TurnInput("아 그리고 카드도 잃어버렸어요")))
     spoken = "".join(e.data["text"] for e in events if e.type == "delta")
@@ -62,7 +61,7 @@ def test_switch_hides_first_worker_speech_and_queues_previous_task():
 
 def test_done_resumes_queued_task():
     c, _ = _controller([_route("card_loss"), _out(intent="done", say="처리됐어요.")])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     from csagent.agent.state import TaskState
     s.queue.append(TaskState("general"))
     c.respond(s, TurnInput("카드 정지해 주세요"))
@@ -73,7 +72,7 @@ def test_outbound_starts_preset_task_without_router():
     c, llm = _controller([_out(say="토스쇼핑 AI 상담원입니다. 담당자이신가요?",
                                tool={"name": "ask_contact", "args": {}}),
                           _out(say="담당자이신가요?")])
-    s = new_call(CallContext(direction="outbound", audience="seller",
+    s = call(CallContext(direction="outbound", audience="seller",
                              customer={"outbound_task": "penalty_notice", "seller": {"penalty_points_30d": 7}}))
     c.respond(s, TurnInput("여보세요"))
     assert s.active.name == "penalty_notice"
@@ -87,7 +86,7 @@ def test_worker_cannot_use_tools_outside_its_policy():
         _out(tool={"name": "report_card_lost", "args": {"card_id": "C1"}}),   # general 워커에는 없는 도구
         _out(say="그건 제가 바로 처리할 수 없어요."),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드 분실신고 해주세요"))
     assert s.trace.of("gate")[0].data["reason"] == "not_allowed"
 
@@ -97,7 +96,7 @@ def test_two_requests_in_one_utterance_are_queued_in_order():
         json.dumps({"tasks": ["card_loss", "wrong_transfer"], "reason": "두 용건"}),
         _out(say="카드부터 확인해 볼게요."),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드 잃어버렸고 어제 송금도 잘못 보냈어요"))
     assert s.active.name == "card_loss" and [t.name for t in s.queue] == ["wrong_transfer"]
 
@@ -114,7 +113,7 @@ def test_add_intent_keeps_task_queues_new_one_and_end_call_waits():
         _out(intent="done", say="", tool={"name": "end_call", "args": {"disposition": "resolved"}}),
         _out(intent="done", say="카드는 처리됐어요. 이제 송금 건을 볼게요."),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드를 잃어버렸어요"))
     c.respond(s, TurnInput("유스카드요 아 그리고 어제 송금도 잘못했어요"))
     assert s.active.name == "card_loss" and [t.name for t in s.queue] == ["wrong_transfer"]
@@ -133,7 +132,7 @@ def test_add_survives_later_step_in_same_turn():
         _out(intent="continue", say="카드부터 마저 볼게요."),
         json.dumps({"tasks": ["wrong_transfer"], "reason": "덧붙인 용건"}),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드를 잃어버렸어요"))
     c.respond(s, TurnInput("네 맞아요. 아 그리고 어제 송금도 잘못했어요"))
     assert [t.name for t in s.queue] == ["wrong_transfer"]
@@ -153,7 +152,7 @@ def test_end_call_block_is_once_then_allowed_next_turn():
         _route("general"),
         _out(say="네, 이용해 주셔서 감사해요.", tool={"name": "end_call", "args": {"disposition": "resolved"}}),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드 잃어버렸고 송금도 잘못했어요"))
     reply = c.respond(s, TurnInput("이제 됐어요"))
     assert not reply.end_call and reply.text == "송금 건도 이어서 도와드릴까요?"
@@ -171,7 +170,7 @@ def test_customer_raising_queued_task_switches_by_code():
         _out(say="확인해 볼게요.", tool={"name": "lookup_transfers", "args": {}}),
         _out(say="어느 송금인지 볼게요."),
     ])
-    s = new_call(CallContext(customer={**CARDS, "transfers": []}))
+    s = call(CallContext(customer={**CARDS, "transfers": []}))
     c.respond(s, TurnInput("카드 잃어버렸고 송금도 잘못했어요"))
     c.respond(s, TurnInput("어제 20만 원 잘못 보냈어요"))
     assert s.active.name == "wrong_transfer" and [t.name for t in s.queue] == ["card_loss"]
@@ -187,7 +186,7 @@ def test_slot_rule_blocks_wrong_transfer_link_unless_mistake():
         _out(say="사기가 의심돼요. 상담원 연결해 드릴게요.",
              tool={"name": "transfer_to_agent", "args": {"reason": "거래 사기 의심", "summary": "중고거래"}}),
     ])
-    s = new_call(CallContext(customer={"name": "윤가영", "transfers": []}))
+    s = call(CallContext(customer={"name": "윤가영", "transfers": []}))
     reply = c.respond(s, TurnInput("중고거래로 돈 보냈는데 판매자가 연락이 안 돼요"))
     assert [t.name for t in reply.tool_calls] == ["lookup_transfers", "send_app_link", "transfer_to_agent"]
     assert reply.tool_calls[1].result["blocked"] == "slot_rule"
@@ -201,7 +200,7 @@ def test_discarded_step_is_not_left_in_messages():
         _out(say="확인해 볼게요.", tool={"name": "lookup_transfers", "args": {}}),
         _out(say="어떤 송금인지 볼게요."),
     ])
-    s = new_call(CallContext(customer={"name": "윤가영", "transfers": []}))
+    s = call(CallContext(customer={"name": "윤가영", "transfers": []}))
     c.respond(s, TurnInput("돈 잘못 보냈어요"))
     retry = llm.calls[2]
     assert all("사기는 아니죠" not in m["content"] for m in retry)
@@ -215,7 +214,7 @@ def test_discarded_step_speech_is_recorded_as_spoken_and_turn_length_is_fed_back
         _out(say="확인해 볼게요.", tool={"name": "lookup_transfers", "args": {}}),
         _out(say="어떤 송금인지 볼게요."),
     ])
-    s = new_call(CallContext(customer={"name": "윤가영", "transfers": []}))
+    s = call(CallContext(customer={"name": "윤가영", "transfers": []}))
     reply = c.respond(s, TurnInput("돈 잘못 보냈어요"))
     spoken = [e.data["text"] for e in s.trace.of("spoken")]
     assert spoken == ["사기는 아니죠?", "확인해 볼게요.", "어떤 송금인지 볼게요."]
@@ -231,7 +230,7 @@ def test_earlier_turn_tool_results_reach_next_turn_prompt():
         _out(say="어느 물건인가요?"),
         _out(say="에어팟 케이스는 상품 준비 중이에요."),
     ])
-    s = new_call(CallContext(customer=orders))
+    s = call(CallContext(customer=orders))
     c.respond(s, TurnInput("물건이 안 왔어요"))
     assert "A3002" not in llm.calls[1][0]["content"]            # 이번 턴 결과는 메시지로만 (중복 없음)
     c.respond(s, TurnInput("에어팟 케이스요"))
@@ -241,12 +240,11 @@ def test_earlier_turn_tool_results_reach_next_turn_prompt():
 
 def test_inbound_call_starts_with_fixed_greeting():
     from csagent.agent.contracts import CallContext
-    from csagent.agent.interface import new_call
-    s = new_call(CallContext(direction="inbound", service="토스"))
+    s = call(CallContext(direction="inbound", service="토스"))
     assert s.history == [("agent", "안녕하세요, 토스 고객센터 AI 상담원입니다. 통화 내용은 녹음됩니다. 무엇을 도와드릴까요?")]
     assert [e.kind for e in s.trace.events] == ["greeting"]
     # 아웃바운드는 받는 쪽이 먼저 말한다 — 소개는 워커 지시문이 첫 응답에서
-    assert new_call(CallContext(direction="outbound", service="토스쇼핑")).history == []
+    assert call(CallContext(direction="outbound", service="토스쇼핑")).history == []
 
 
 def test_unlisted_phone_number_removed_from_speech_and_record():
@@ -256,9 +254,9 @@ def test_unlisted_phone_number_removed_from_speech_and_record():
                                          "service": "토스쇼핑", "verified": True}]})
     llm = ScriptedLLM([_route("general"),
                        _out(say="토스쇼핑 고객센터 1644-2944나 판매자 1588-0000로 문의해 주세요.")])
-    loop = TurnLoop(FakeRetriever(), llm, default_registry(), gate=ExecutionGate(), contacts=book)
+    loop = TurnLoop(FakeRetriever(), llm, TOOLS, gate=ExecutionGate(), contacts=book)
     c = CallController(loop, Router(llm, WORKERS), WORKERS)
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     events = list(c.respond_stream(s, TurnInput("택배가 안 와요")))
     spoken = "".join(e.data["text"] for e in events if e.type == "delta")
     # 검색된 문서의 연락처는 그대로, 목록에 없는 번호만 지운다 — 들은 말과 기록이 같아야 한다
@@ -328,9 +326,9 @@ def test_greeting_not_in_worker_history():
     # 인사말이 assistant 메시지로 들어가면 모델이 막힐 때 통화 중간에 그대로 베낀다 (runs/20261016_183622_C)
     llm = ScriptedLLM([_route("card_loss"), _out(say="확인해 볼게요.", tool={"name": "lookup_cards", "args": {}}),
                        _out(say="조회됐어요.")])
-    loop = TurnLoop(FakeRetriever(), llm, default_registry(), gate=ExecutionGate())
+    loop = TurnLoop(FakeRetriever(), llm, TOOLS, gate=ExecutionGate())
     c = CallController(loop, Router(llm, WORKERS), WORKERS)
-    s = new_call(CallContext(direction="inbound", service="토스", customer=CARDS))
+    s = call(CallContext(direction="inbound", service="토스", customer=CARDS))
     list(c.respond_stream(s, TurnInput("카드 잃어버렸어요")))
     worker_msgs = llm.calls[-1]
     assert not any("무엇을 도와드릴까요" in m["content"] for m in worker_msgs if m["role"] == "assistant")
@@ -351,7 +349,7 @@ def test_spoken_confirmation_is_registered_so_customer_is_asked_once():
         _out_confirm("토스유스카드 1234 분실신고할까요?", report),
         _out_confirm("분실신고 접수해 드릴게요.", None, answer={"answer": "yes", "quote": "네"}, tool=report),
         _out(say="분실신고가 접수됐어요.")])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     s.authenticated = True
     c.respond(s, TurnInput("카드 잃어버렸어요. 못 찾을 것 같아요"))
     assert s.pending is not None and s.pending.has("report_card_lost", {"card_id": "C1"})
@@ -367,7 +365,7 @@ def test_spoken_confirmation_not_registered_before_auth():
         _route("card_loss"),
         _out(say="확인해 볼게요.", tool={"name": "lookup_cards", "args": {}}),
         _out_confirm("분실신고할까요?", {"name": "report_card_lost", "args": {"card_id": "C1"}})])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드 잃어버렸어요"))
     assert s.pending is None
     assert s.trace.of("spoken_confirm")[0].data["registered"] is False
@@ -389,7 +387,7 @@ def test_end_call_blocked_in_turn_that_executed_then_allowed_next_turn():
         _route("general"),   # 4턴: 카드 업무는 3턴에 끝남 → 다음 말은 라우터가 다시 본다 (두 번째 용건이 들어오는 길)
         _out(intent="done", say="네, 감사합니다.", tool={"name": "end_call", "args": {"disposition": "resolved"}}),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드를 잃어버렸어요"))
     c.respond(s, TurnInput("네 일시정지해 주세요"))
     reply = c.respond(s, TurnInput("네 해 주세요"))
@@ -407,7 +405,7 @@ def test_question_with_tool_waits_for_answer():
         _out(say="카드 상태를 확인해 드릴까요?", tool={"name": "lookup_cards", "args": {}}),
         _out(say="이 말은 나가면 안 됨"),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     reply = c.respond(s, TurnInput("카드를 잃어버렸어요"))
     assert reply.text == "카드 상태를 확인해 드릴까요?"          # 조회는 하고 턴을 끝낸다
     assert [t.name for t in reply.tool_calls] == ["lookup_cards"]
@@ -419,7 +417,7 @@ def test_question_with_end_call_does_not_hang_up():
         _route("card_loss"),
         _out(intent="done", say="다른 도움 필요하신가요?", tool={"name": "end_call", "args": {"disposition": "resolved"}}),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     reply = c.respond(s, TurnInput("카드 분실 문의요"))
     assert not reply.end_call and reply.text == "다른 도움 필요하신가요?" and not reply.tool_calls
 
@@ -435,7 +433,7 @@ def test_question_with_execution_registers_confirmation_instead_of_running():
              answer={"answer": "yes", "quote": "네"}),
         _out(say="일시정지됐어요."),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드를 잃어버렸어요"))
     reply = c.respond(s, TurnInput("네 일시정지해 주세요"))
     assert reply.text.endswith("일시정지할까요?") and not s.succeeded

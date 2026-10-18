@@ -1,14 +1,14 @@
 import pytest
 
 from csagent.agent.contracts import CallContext, TurnInput
-from csagent.agent.interface import new_call
+from tests.local import call
 from csagent.agent.protocol import load_protocol
 from csagent.agent.state import Pending, TaskState
 from tests.test_controller import CARDS, _controller, _out, _route
 
 
 def _state():
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     s.active = TaskState("card_loss")
     return s
 
@@ -46,7 +46,7 @@ def test_step_change_mid_turn_is_announced_and_tools_follow_step():
         _out(say="앱으로 인증 요청을 보낼게요.", tool={"name": "request_app_auth", "args": {}}),
         _out(say="카드를 다시 찾을 수 있을까요?"),
     ])
-    s = new_call(CallContext(customer=CARDS))
+    s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("유스카드 잃어버렸어요"))
     assert [e.data for e in s.trace.of("gate")][0] == {"name": "report_card_lost", "allowed": False,
                                                        "reason": "not_allowed"}
@@ -69,7 +69,7 @@ def test_no_cards_found_moves_to_not_found_step_without_auth():
         _out(say="확인해 볼게요.", tool={"name": "lookup_cards", "args": {}}),
         _out(say="고객님 명의로 조회되는 토스 카드가 없어요. 어느 회사 카드인가요?"),
     ])
-    s = new_call(CallContext(customer={"name": "행복상회"}))
+    s = call(CallContext(customer={"name": "행복상회"}))
     c.respond(s, TurnInput("신용카드를 잃어버렸어요"))
     assert [e.data["step"] for e in s.trace.of("protocol_step")] == ["lookup", "not_found"]
     assert "request_app_auth" not in llm.calls[-1][0]["content"].split("이 단계에서 쓸 수 있는 도구:")[-1].split("\n")[0]
