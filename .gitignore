@@ -18,3 +18,12 @@ runs_*.log
 labels/**/items.jsonl
 labels/*/sample.jsonl
 labels/*/part*.jsonl
+# 기계별 경로 (scripts/serve.sh가 읽음)
+.serve.env
+# 개인 기획 메모 (공개 저장소에 올리지 않음)
+docs/01_*.md
+docs/02_*.md
+docs/03_*.md
+docs/memo_*.md
+# 세션 인수인계 메모
+HANDOFF.md

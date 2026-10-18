@@ -20,13 +20,16 @@
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VENV=$HOME/miniconda3/envs/vllm
+# 기계마다 다른 경로는 .serve.env(커밋 안 함)에서 덮어쓴다: VENV · MODEL_27B · MODEL_9B · CPU_EMBED_SERVER
+[ -f "$ROOT/.serve.env" ] && . "$ROOT/.serve.env"
+VENV=${VENV:-$HOME/miniconda3/envs/vllm}
 LOGDIR=${LOGDIR:-$HOME/csagent_logs}; mkdir -p "$LOGDIR"
 IP=$(hostname -I | awk '{print $1}')
 export VLLM_USE_FLASHINFER_SAMPLER=0 PYTHONUNBUFFERED=1
 
-MODEL_27B=/home/ubuntu/models/Qwen3.8-27B-INT4
-MODEL_9B="/mnt/d/workspace/stock dataset/models/Qwen3.5-9B-FP8-dynamic"
+MODEL_27B=${MODEL_27B:-$HOME/models/Qwen3.8-27B-INT4}
+MODEL_9B=${MODEL_9B:-$HOME/models/Qwen3.5-9B-FP8-dynamic}
+CPU_EMBED_SERVER=${CPU_EMBED_SERVER:-}
 
 up()   { curl -s --noproxy '*' --max-time 3 "$1" 2>/dev/null | grep -q "$2"; }
 wait_up() { # url pattern log name
@@ -48,7 +51,8 @@ start() {
   echo "== GPU 사용 중: $(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)"
 
   if ! up "http://$IP:8011/" qwen3-emb-cpu; then
-    CUDA_VISIBLE_DEVICES="" setsid nohup $VENV/bin/python /mnt/d/workspace/agentic_rag/scripts/cpu_embed_server.py \
+    [ -n "$CPU_EMBED_SERVER" ] || { echo "CPU 임베딩 서버 스크립트 경로를 .serve.env의 CPU_EMBED_SERVER에 지정하세요"; return 1; }
+    CUDA_VISIBLE_DEVICES="" setsid nohup $VENV/bin/python "$CPU_EMBED_SERVER" \
       --port 8011 > "$LOGDIR/cpu_embed.log" 2>&1 &
     wait_up "http://$IP:8011/" qwen3-emb-cpu "$LOGDIR/cpu_embed.log" "임베딩(CPU)" || return 1
   else echo "ok: 임베딩(CPU) 이미 실행 중"; fi
