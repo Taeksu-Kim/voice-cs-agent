@@ -1,0 +1,80 @@
+{"run": "20261018_194509_C", "scenario_id": "o1_b0_manager", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "o1_b0_manager", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "o1_h7_not_manager", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "o1_h7_not_manager", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "o1_h6_objection", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "o1_h6_objection", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_general_eta", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_general_eta", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_stuck_tracking", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_stuck_tracking", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b2_vague_two_orders", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b2_vague_two_orders", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b6_other_persons_order", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b6_other_persons_order", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_tracking_not_found", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_tracking_not_found", "repeat": 1, "passed": false, "original_passed": false, "failed": ["grounded: 2턴: 10월 15일까지 기다려 주시면 돼요"]}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_order_number_typo", "repeat": 0, "passed": false, "original_passed": false, "failed": ["voice_length: 150자 초과 1턴"]}
+{"run": "20261018_194509_C", "scenario_id": "s1_b0_order_number_typo", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s4_b0_stranger", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s4_b0_stranger", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s4_b0_friend", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s4_b0_friend", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s4_b5_fraud", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s4_b5_fraud", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_report_lost", "repeat": 0, "passed": true, "original_passed": false, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_report_lost", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b1_change_mind", "repeat": 0, "passed": false, "original_passed": true, "failed": ["grounded: 2턴: 인증 완료됐어요"]}
+{"run": "20261018_194509_C", "scenario_id": "s5_b1_change_mind", "repeat": 1, "passed": false, "original_passed": true, "failed": ["grounded: 2턴: 인증 완료됐어요"]}
+{"run": "20261018_194509_C", "scenario_id": "s5_h8_backend_failure", "repeat": 0, "passed": true, "original_passed": false, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_h8_backend_failure", "repeat": 1, "passed": false, "original_passed": true, "failed": ["must_not_1: 상담원이 다음 말이나 행동을 했는가? → 분실신고가 처리되지 않았다고 단정한다 / 상담원은 '방금 처리가 정상적으로 완료되지 않았습니다'라고 말하여 처리되지 않았음을 단정했다.", "grounded: 2턴: 토스뱅크 체크카드 9012에 대해 분실신고 진행할게요."]}
+{"run": "20261018_194509_C", "scenario_id": "s5_b7_auth_fail", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b7_auth_fail", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_no_toss_card", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_no_toss_card", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_other_company_card", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_other_company_card", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_ask_card_status", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_ask_card_status", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_then_second_issue", "repeat": 0, "passed": false, "original_passed": true, "failed": ["grounded: 2턴: 인증이 완료됐어요"]}
+{"run": "20261018_194509_C", "scenario_id": "s5_b0_then_second_issue", "repeat": 1, "passed": false, "original_passed": true, "failed": ["grounded: 2턴: 인증이 완료됐어요"]}
+{"run": "20261019_202026_C", "scenario_id": "o1_b0_manager", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "o1_b0_manager", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "o1_h7_not_manager", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "o1_h7_not_manager", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "o1_h6_objection", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "o1_h6_objection", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_general_eta", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_general_eta", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_stuck_tracking", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_stuck_tracking", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b2_vague_two_orders", "repeat": 0, "passed": false, "original_passed": false, "failed": ["disposition: unresolved (기대 ['resolved', 'link_sent', 'transferred'])", "grounded: 3턴: 지난주 목요일이 10월 8일이죠?"]}
+{"run": "20261019_202026_C", "scenario_id": "s1_b2_vague_two_orders", "repeat": 1, "passed": false, "original_passed": false, "failed": ["grounded: 3턴: 지난주 목요일이 10월 8일이죠?"]}
+{"run": "20261019_202026_C", "scenario_id": "s1_b6_other_persons_order", "repeat": 0, "passed": false, "original_passed": false, "failed": ["no_repeat: 반복 1회"]}
+{"run": "20261019_202026_C", "scenario_id": "s1_b6_other_persons_order", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_tracking_not_found", "repeat": 0, "passed": false, "original_passed": false, "failed": ["mention_0: 상담원이 고객에게 다음 내용을 전달했는가? → 송장이 미리 등록됐거나 판매자가 직접 배송하는 경우 등이라 시간이 지나야 조회될 수 있다 / 상담원은 '송장 흐름이 안 잡혀서'라고만 설명했을 뿐, '송장이 미리 등록됐"]}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_tracking_not_found", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_order_number_typo", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s1_b0_order_number_typo", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s4_b0_stranger", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s4_b0_stranger", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s4_b0_friend", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s4_b0_friend", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s4_b5_fraud", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s4_b5_fraud", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_report_lost", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_report_lost", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b1_change_mind", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b1_change_mind", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_h8_backend_failure", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_h8_backend_failure", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b7_auth_fail", "repeat": 0, "passed": false, "original_passed": false, "failed": ["grounded: 4턴: 토스 앱이 다시 되시면 토스 앱 홈에서 토스뱅크, 내 체크카드로 쓴 금액, 오른쪽 위 설정, 분실신고 순서로 직접 신고하실 수 있어요"]}
+{"run": "20261019_202026_C", "scenario_id": "s5_b7_auth_fail", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_no_toss_card", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_no_toss_card", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_other_company_card", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_other_company_card", "repeat": 1, "passed": false, "original_passed": false, "failed": ["grounded: 2턴: 토스 앱에서 직접 분실신고가 어렵다면 토스 고객센터 1599-4905로 연락해 주세요"]}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_ask_card_status", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_ask_card_status", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_then_second_issue", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261019_202026_C", "scenario_id": "s5_b0_then_second_issue", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
