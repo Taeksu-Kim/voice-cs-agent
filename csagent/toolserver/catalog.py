@@ -34,6 +34,7 @@ class Param:
     required: bool = False
     description: str = ""
     grounded_by: str = ""     # "<도구>.<결과 경로>" — 이번 통화에서 그 도구 결과에 나온 값만 허용 (docs/08 7-2)
+    enum: tuple[str, ...] = ()   # 허용값 — inputSchema enum으로 나가 에이전트 형식 검증이 막는다
 
 
 @dataclass(frozen=True)
@@ -86,8 +87,13 @@ def _param(name: str, raw: Any, where: str) -> Param:
         raise CatalogError(f"{where}.{name}: source는 {'|'.join(SOURCES)} 중 하나 (받은 값: {source!r})")
     if source == "context" and raw.get("grounded_by"):
         raise CatalogError(f"{where}.{name}: context 파라미터에는 grounded_by를 둘 수 없습니다")
+    enum = raw.get("enum") or []
+    if not isinstance(enum, list) or not all(isinstance(v, str) and v for v in enum) or len(set(enum)) != len(enum):
+        raise CatalogError(f"{where}.{name}: enum은 겹치지 않는 문자열 목록이어야 합니다")
+    if enum and source == "context":
+        raise CatalogError(f"{where}.{name}: context 파라미터에는 enum을 둘 수 없습니다")
     return Param(name, str(raw.get("type", "string")), source, bool(raw.get("required", False)),
-                 str(raw.get("description", "")), str(raw.get("grounded_by", "") or ""))
+                 str(raw.get("description", "")), str(raw.get("grounded_by", "") or ""), tuple(enum))
 
 
 def _entry(raw: Any, service: str) -> Entry:
@@ -147,7 +153,8 @@ def load_catalog(directory: str | Path) -> Catalog:
 
 def to_tool(entry: Entry) -> types.Tool:
     """카탈로그 항목 → MCP 도구 정의. context 파라미터는 inputSchema에서 빠진다 (모델에 안 보임)."""
-    props = {p.name: {"type": p.type, **({"description": p.description} if p.description else {})}
+    props = {p.name: {"type": p.type, **({"description": p.description} if p.description else {}),
+                      **({"enum": list(p.enum)} if p.enum else {})}
              for p in entry.model_params()}
     required = [p.name for p in entry.model_params() if p.required]
     schema: dict[str, Any] = {"type": "object", "properties": props, "additionalProperties": False}

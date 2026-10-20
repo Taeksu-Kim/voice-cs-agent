@@ -1,0 +1,20 @@
+# 안내 항목 — send_app_link가 보낼 수 있는 것 전부 (링크 가드레일의 등록 목록, 10/19 러프 버전)
+# 항목 = {id, name, audience, doc_id}. url은 여기 적지 않는다 — 도메인 API가 시작할 때 지식 베이스(chunks.jsonl)의
+# 그 문서 url로 채운다 (모델도 이 파일도 URL을 지어낼 수 없게). 지식 베이스에 없는 doc_id면 시작이 실패한다.
+# 앱 화면(「주문 내역」 등)은 실제 URL이 데이터에 없다 → 그 화면 표식([앱 링크: 주문 내역])이 있는 FAQ로 보낸다.
+# id 목록은 catalog/notify.yaml send_app_link.target의 enum과 같아야 한다 (tests/test_guides.py가 확인)
+- {id: order_history, name: "주문 내역 (배송 예정일 확인·교환/반품 접수)", audience: consumer, doc_id: "faq:4705"}
+- {id: delivery_tracking_issue, name: "발송했는데 배송 조회가 안 될 때", audience: consumer, doc_id: "faq:6711"}
+- {id: shipping_address_change, name: "배송지 변경·주문 취소 방법", audience: consumer, doc_id: "faq:5447"}
+- {id: exchange_refund_request, name: "교환·환불 접수 방법", audience: consumer, doc_id: "faq:5449"}
+- {id: defect_exchange_return, name: "품질 불량 교환·반품 (사진 첨부)", audience: consumer, doc_id: "faq:6709"}
+- {id: wrong_transfer_report, name: "착오송금 반환 접수", audience: consumer, doc_id: "faq:139"}
+- {id: wrong_transfer_unreturned, name: "착오송금을 돌려받지 못했을 때 (예금보험공사 반환 지원)", audience: consumer, doc_id: "faq:1885"}
+- {id: secondhand_fraud_compensation, name: "중고거래 사기 안심보상제", audience: consumer, doc_id: "faq:272"}
+- {id: tossbank_card_lost_reissue, name: "토스뱅크 카드 분실신고·재발급", audience: consumer, doc_id: "faq:5247"}
+- {id: youth_card_reissue, name: "토스유스카드 재발급", audience: consumer, doc_id: "faq:3921"}
+- {id: tossbank_card_pause, name: "토스뱅크 카드 결제 일시정지", audience: consumer, doc_id: "faq:4267"}
+- {id: credit_card_lost_hana, name: "토스신용카드 분실신고 (하나카드)", audience: consumer, doc_id: "faq:284"}
+- {id: seller_penalty_appeal, name: "셀러 페널티 소명 가이드", audience: seller, doc_id: "shop:penalty__appeal__seller-penalty"}
+- {id: seller_penalty_policy, name: "셀러 페널티 부과 기준", audience: seller, doc_id: "shop:penalty__penalty__seller-penalty"}
+- {id: seller_cancel_exchange_return, name: "취소·교환·반품 관리하기", audience: seller, doc_id: "shop:shopping-operations__order__cancel_management"}

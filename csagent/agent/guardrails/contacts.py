@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 from typing import Iterable, Optional
 
+from csagent.agent.guardrails.links import strip_links
 from csagent.obs import event
 
 log = logging.getLogger("csagent.agent")
@@ -113,26 +114,37 @@ def _no_final(before: str) -> bool:
     return final in (0, 8)
 
 
+def _latin(ch: str) -> bool:
+    return "a" <= ch.lower() <= "z"
+
+
 class SpeechScreen:
-    """스트리밍 조각용. 숫자가 없는 동안은 그대로 내보내고, 숫자가 나오면 그 문장 끝까지 모았다가 검사한다."""
+    """스트리밍 조각용. 숫자·영문이 없는 동안은 그대로 내보내고, 나오면 그 문장 끝까지 모았다가 검사한다
+    (전화번호 → strip_unlisted, URL·도메인 → links.strip_links). allowed=None이면 번호 검사만 빠진다."""
 
     def __init__(self, allowed: Optional[set[str]]) -> None:
         self.allowed = allowed
         self.held = ""
+        self.dot = False       # 「영문·숫자.」 바로 뒤 — 문장 끝인지 URL·소수점 가운데인지 다음 글자를 보고 안다
         self.gap = ""          # 숫자 바로 앞의 공백·여는 괄호 — 번호를 지울 때 같이 지워야 해서 잠깐 쥐고 있는다
         self.removed: list[str] = []
+        self.links: list[str] = []
         self.last = ""         # 마지막으로 내보낸 글자 — 번호를 지운 뒤 조사를 고를 때
 
     def feed(self, piece: str) -> str:
-        if self.allowed is None:
-            return piece
         out = ""
         for ch in piece:
+            if self.held and self.dot:
+                self.dot = False
+                if ch.isspace():
+                    out += self._release()   # 앞 마침표가 문장 끝이었다 — 이 공백은 아래에서 평소대로
             if self.held:
                 self.held += ch
-                if ch in _ENDS:
+                if ch == "." and self.held[-2:-1].isascii() and self.held[-2:-1].isalnum():
+                    self.dot = True          # toss.im · 1.5 — 아직 놓지 않는다
+                elif ch in _ENDS:
                     out += self._release()
-            elif ch.isdigit():
+            elif ch.isdigit() or _latin(ch):
                 self.held, self.gap = self.gap + ch, ""
             elif ch in " (":
                 self.gap += ch
@@ -143,16 +155,17 @@ class SpeechScreen:
 
     def flush(self) -> str:
         out = self._release() if self.held else self.gap
-        self.gap = ""
+        self.gap, self.dot = "", False
         return out
 
     def _release(self) -> str:
-        # 「1.5」의 마침표에서 놓아도 괜찮다 — 8자리 번호 가운데에는 마침표가 없다고 본다
         text, removed = strip_unlisted(self.held, self.allowed, before=self.last)
         if not removed:
             text = self.held   # 그대로 (strip_unlisted는 지운 게 있을 때만 공백을 정리한다)
         # 지웠으면 번호 앞 공백·괄호도 같이 사라진다 (「고객센터 1661-7655로」 → 「고객센터로」)
+        text, links = strip_links(text)
         self.removed += removed
+        self.links += links
         self.held = ""
         self.last = (self.last + text)[-1:]
         return text

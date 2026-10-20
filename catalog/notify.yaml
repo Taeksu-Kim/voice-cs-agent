@@ -1,12 +1,21 @@
 # 알림·예약 서비스 — 도메인 API /notify/*
 - name: send_app_link
-  version: 1
+  version: 2           # 2: target 자유 문자열 → 안내 항목 id enum (10/19)
   owner: notify
   status: active
-  description: "고객 휴대폰으로 토스 앱 화면 링크 문자 발송"
+  description: "고객 휴대폰으로 안내 링크(앱 화면·안내 문서) 문자 발송"
   endpoint: /notify/app_link
   params:
-    target: {type: string, source: model, required: true, description: "화면 이름 (예: 주문 내역)"}
+    # 안내 항목 id만 — 목록·url은 도메인 API(csagent/domain/guides.yaml)가 가진다. 두 목록은 같아야 함 (tests/test_guides.py)
+    target:
+      type: string
+      source: model
+      required: true
+      description: "안내 항목 id"
+      enum: [order_history, delivery_tracking_issue, shipping_address_change, exchange_refund_request,
+             defect_exchange_return, wrong_transfer_report, wrong_transfer_unreturned, secondhand_fraud_compensation,
+             tossbank_card_lost_reissue, youth_card_reissue, tossbank_card_pause, credit_card_lost_hana,
+             seller_penalty_appeal, seller_penalty_policy, seller_cancel_exchange_return]
     customer_id: {type: string, source: context}
   risk: notify
   approved_by: platform

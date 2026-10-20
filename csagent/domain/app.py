@@ -9,7 +9,7 @@
     POST /seller/lookup              {customer_id}
     POST /ads/leads                  {customer_id, need?, budget?, interest?, grade?}
     POST /auth/app_auth              {customer_id}
-    POST /notify/app_link            {customer_id, target}
+    POST /notify/app_link            {customer_id, target}   target = 안내 항목 id (domain/guides.yaml)
     POST /notify/callback            {customer_id, when}
     PUT · GET · DELETE /_fixtures/{customer_id}   평가·개발 전용 (enable_fixtures=True일 때만)
     GET  /health
@@ -30,6 +30,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
+from csagent.domain.guides import GuideBook
 from csagent.domain.store import FixtureStore
 
 
@@ -71,8 +72,13 @@ class CallbackReq(Req):
     when: str
 
 
-def create_app(store: Optional[FixtureStore] = None, enable_fixtures: bool = False) -> FastAPI:
+NO_TIME = {"", "unknown", "none", "null", "n/a", "?", "미정", "모름", "알 수 없음", "알수없음"}   # 「시각 없음」 표시
+
+
+def create_app(store: Optional[FixtureStore] = None, enable_fixtures: bool = False,
+               guides: Optional[GuideBook] = None) -> FastAPI:
     store = store if store is not None else FixtureStore()
+    guides = guides if guides is not None else GuideBook.load()
     app = FastAPI(title="csagent domain API")
     app.state.store = store
 
@@ -186,11 +192,19 @@ def create_app(store: Optional[FixtureStore] = None, enable_fixtures: bool = Fal
     @notify.post("/app_link")
     def send_app_link(req: LinkReq) -> dict:
         customer(req.customer_id, "send_app_link")
-        return ok({"sent": True, "target": req.target})
+        guide = guides.get(req.target)
+        if guide is None:   # 카탈로그 enum으로 에이전트에서 이미 막힌다 — 여기는 뒷단
+            raise DomainError("UNKNOWN_GUIDE", f"unknown_guide:{req.target} (등록된 안내 항목만 보낼 수 있음)")
+        return ok({"sent": True, "target": guide.id, "title": guide.name, "url": guide.url})
 
     @notify.post("/callback")
     def schedule_callback(req: CallbackReq) -> dict:
         customer(req.customer_id, "schedule_callback")
+        # 예약에는 시각이 있어야 한다 — 시각 없이 예약하고 고객에겐 「4시에 연락드릴게요」라고 한 오동작 (docs/09 G1).
+        # 「시각 없음」 표시만 거른다. 시각 표현이 맞는지(「오후 4시 이후」)는 판단하지 않는다
+        if req.when.strip().lower() in NO_TIME:
+            raise DomainError("WHEN_REQUIRED", "when_required: 고객이 말한 희망 시각이 없어 예약할 수 없음 — "
+                                               "고객에게 통화 가능한 시간을 묻고, 고객이 말한 시각으로 다시 예약하세요")
         return ok({"scheduled": True, "when": req.when})
 
     for r in (shopping, transfer, card, seller, ads, auth, notify):
