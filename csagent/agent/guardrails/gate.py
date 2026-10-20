@@ -24,6 +24,8 @@ REASONS = {
                                "실패했으면 처리됐다고 하지 말고 transfer_to_agent로 연결하세요"),
     "contact_required": "통화 상대가 담당자로 확인된 뒤에만 쓸 수 있습니다 (ask_contact)",
     "result_unheard": "도구로 처리한 결과(실행·발송)를 알린 턴에는 통화를 끝내지 않습니다 — 고객 대답을 들은 뒤에 끝냅니다",
+    "outcome_unknown": ("같은 실행이 응답 없이 끝나 처리됐는지 모릅니다. 다시 실행하기 전에 조회 도구로 지금 상태를 확인하세요 "
+                        "(이미 처리됐으면 두 번 실행됩니다). 확인할 수 없으면 transfer_to_agent로 연결하세요"),
 }
 
 
@@ -50,6 +52,9 @@ class ExecutionGate:
             return GateDecision(False, "confirmation_required")   # 루프가 확인 질문을 건다
         if spec.risk == "execute" and execution_key(spec, args) in state.executed:
             return GateDecision(False, "duplicate")
+        if spec.risk == "execute" and execution_key(spec, args) in state.unknown_executions:
+            # 시간 초과 = 실패가 아니다. 백엔드는 처리했을 수 있다 → 조회로 상태를 보기 전엔 다시 실행하지 않는다 (docs/09 G9)
+            return GateDecision(False, "outcome_unknown")
         if spec.name == "end_call" and args.get("disposition") not in ("refused", "transferred") \
                 and any(not t.started for t in state.queue) \
                 and (state.end_blocked_turn is None or state.end_blocked_turn == state.turn):

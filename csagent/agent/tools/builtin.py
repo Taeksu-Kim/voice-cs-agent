@@ -28,7 +28,17 @@ DISPOSITIONS = ("resolved", "link_sent", "transferred", "refused", "unresolved")
 def end_call(state: CallState, disposition: str = "resolved") -> dict:
     if disposition not in DISPOSITIONS:
         return {"error": f"bad_disposition:{disposition} (허용: {', '.join(DISPOSITIONS)})"}
+    # 통화 결과는 운영 지표로 남는 값 — 사실과 맞아야 한다 (docs/09 G4).
+    # link_sent인데 발송 기록이 없던 종료 5건 (o1_h7 재통화 예약을 link_sent로, 10/16~17)
+    if disposition == "link_sent" and not _succeeded(state, "send_app_link"):
+        return {"error": "disposition_mismatch: 이 통화에서 send_app_link가 성공하지 않았습니다 — 실제 결과에 맞는 disposition으로 다시 호출하세요"}
+    if disposition == "transferred":   # 연결은 transfer_to_agent가 한다 — end_call로 적으면 연결 없이 끊긴다
+        return {"error": "disposition_mismatch: 상담원 연결은 transfer_to_agent로 하세요 (end_call은 연결하지 않습니다)"}
     return {"ended": True, "disposition": disposition}
+
+
+def _succeeded(state: CallState, tool: str) -> bool:
+    return any(e.data.get("name") == tool and e.data.get("ok") for e in state.trace.of("tool_result"))
 
 
 def builtin_specs() -> list[ToolSpec]:

@@ -23,7 +23,8 @@ class FakeRetriever:
 
 
 def _say(text, tool=None):
-    return json.dumps({"say": text, "tool": tool}, ensure_ascii=False)
+    # 실제 출력과 같은 키 순서 — tool이 say 앞 (docs/09 G7: 말을 내보내기 전에 막힐 도구인지 본다)
+    return json.dumps({"tool": tool, "say": text}, ensure_ascii=False)
 
 
 CTX = CallContext(audience="consumer", today="2026-10-12",
@@ -90,7 +91,7 @@ def test_voice_format_check_flags_lists_and_parens():
 
 
 def test_customer_hangup_is_neutral_and_disposition_not_scored():
-    llm = ScriptedLLM([_say("확인해 볼게요.")])
+    llm = ScriptedLLM([_say("배송은 평균 3~5일 걸려요.")])
     sc = _scenario(dispositions=["resolved"])
     tr = run_call(make_agent(llm), ScriptedCustomer(["택배요"], satisfied=False), sc)
     assert tr.disposition == "customer_ended" and tr.customer_satisfied is False
@@ -132,7 +133,7 @@ def test_announced_notify_ends_turn_with_short_done_line():
     assert announced_done("send_app_link", "확인해 볼게요.") is None        # 미리 알리지 않았으면 결과 스텝이 말한다
     assert announced_done("request_app_auth", "인증 요청을 보낼게요.") is None   # 결과를 말해야 하는 도구는 대상 아님
     llm = ScriptedLLM([_say("", {"name": "lookup_orders", "args": {}}),
-                       _say("앱 링크 보내 드릴게요.", {"name": "send_app_link", "args": {"target": "주문 내역"}}),
+                       _say("앱 링크 보내 드릴게요.", {"name": "send_app_link", "args": {"target": "order_history"}}),
                        _say("보내 드렸습니다. 링크에서 확인해 주세요.")])   # 불리면 안 되는 결과 스텝
     reply = make_agent(llm).respond(call(CTX), TurnInput("주문 내역 링크 보내 주세요"))
     assert reply.text == "앱 링크 보내 드릴게요. 보내 드렸어요."
@@ -149,7 +150,7 @@ def test_respond_stream_event_order():
 
 def test_judge_uses_transfer_goal_and_worker_instructions_and_sim_diagnostic():
     sc = _scenario(must_mention=[], must_not=[])
-    tr = run_call(make_agent(ScriptedLLM([_say("확인해 볼게요.")])),
+    tr = run_call(make_agent(ScriptedLLM([_say("배송은 평균 3~5일 걸려요.")])),
                       ScriptedCustomer(["며칠요"]), sc)
     tr.disposition = "transferred"   # 기대 결과를 정하지 않은 시나리오 → 연결이 허용된 결과
     judge_llm = ScriptedLLM([

@@ -16,7 +16,7 @@ CARDS = {"name": "이서연", "auth_result": "success",
 
 def _out(intent="continue", say="", tool=None, slots=None, answer=None):
     return json.dumps({"intent": intent, "pending_answer": answer, "slots": slots or {},
-                       "say": say, "tool": tool}, ensure_ascii=False)
+                       "tool": tool, "say": say}, ensure_ascii=False)   # tool이 say 앞 (실제 순서)
 
 
 def _route(task):
@@ -49,13 +49,13 @@ def test_switch_hides_first_worker_speech_and_queues_previous_task():
         # 2턴: general 워커가 switch → 이 워커의 say는 고객에게 나가면 안 됨
         _out(intent="switch", say="이 말은 나가면 안 됨"),
         _route("card_loss"),
-        _out(say="카드를 잃어버리셨군요. 확인해 볼게요."),
+        _out(say="카드를 잃어버리셨군요. 어느 카드인가요?"),
     ])
     s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("배송 며칠 걸려요"))
     events = list(c.respond_stream(s, TurnInput("아 그리고 카드도 잃어버렸어요")))
     spoken = "".join(e.data["text"] for e in events if e.type == "delta")
-    assert "나가면 안 됨" not in spoken and spoken == "카드를 잃어버리셨군요. 확인해 볼게요."
+    assert "나가면 안 됨" not in spoken and spoken == "카드를 잃어버리셨군요. 어느 카드인가요?"
     assert s.active.name == "card_loss" and [t.name for t in s.queue] == ["general"]
 
 
@@ -94,7 +94,7 @@ def test_worker_cannot_use_tools_outside_its_policy():
 def test_two_requests_in_one_utterance_are_queued_in_order():
     c, _ = _controller([
         json.dumps({"tasks": ["card_loss", "wrong_transfer"], "reason": "두 용건"}),
-        _out(say="카드부터 확인해 볼게요."),
+        _out(say="카드부터 도와드릴게요."),
     ])
     s = call(CallContext(customer=CARDS))
     c.respond(s, TurnInput("카드 잃어버렸고 어제 송금도 잘못 보냈어요"))
@@ -182,7 +182,7 @@ def test_slot_rule_blocks_wrong_transfer_link_unless_mistake():
         _route("wrong_transfer"),
         _out(say="확인해 볼게요.", tool={"name": "lookup_transfers", "args": {}}),
         _out(say="", slots={"transfer_reason": "거래대금"},
-             tool={"name": "send_app_link", "args": {"target": "착오송금 접수"}}),
+             tool={"name": "send_app_link", "args": {"target": "wrong_transfer_report"}}),
         _out(say="사기가 의심돼요. 상담원 연결해 드릴게요.",
              tool={"name": "transfer_to_agent", "args": {"reason": "거래 사기 의심", "summary": "중고거래"}}),
     ])
@@ -203,23 +203,25 @@ def test_discarded_step_is_not_left_in_messages():
     s = call(CallContext(customer={"name": "윤가영", "transfers": []}))
     c.respond(s, TurnInput("돈 잘못 보냈어요"))
     retry = llm.calls[2]
-    assert all("사기는 아니죠" not in m["content"] for m in retry)
+    assert all("사기는 아니죠" not in m["content"] for m in retry if m["role"] == "assistant")   # 버린 응답은 대화에 안 넣는다
     assert retry[-1]["role"] == "user" and "[절차]" in retry[-1]["content"]
 
 
-def test_discarded_step_speech_is_recorded_as_spoken_and_turn_length_is_fed_back():
+def test_discarded_step_speech_is_recorded_as_heard_and_turn_length_is_fed_back():
     c, llm = _controller([
         _route("wrong_transfer"),
-        _out(say="사기는 아니죠?"),                  # 조회 전에 답하려 함 → 버림 (스트리밍으로는 이미 나감)
+        _out(say="사기는 아니죠?"),                  # 조회 전에 답하려 함 → 버림 (도구가 정해질 때까지 붙잡아 둬서 안 나감)
         _out(say="확인해 볼게요.", tool={"name": "lookup_transfers", "args": {}}),
         _out(say="어떤 송금인지 볼게요."),
     ])
     s = call(CallContext(customer={"name": "윤가영", "transfers": []}))
     reply = c.respond(s, TurnInput("돈 잘못 보냈어요"))
     spoken = [e.data["text"] for e in s.trace.of("spoken")]
-    assert spoken == ["사기는 아니죠?", "확인해 볼게요.", "어떤 송금인지 볼게요."]
-    assert "사기는 아니죠" not in reply.text
-    assert "[이번 턴에 이미 한 말 — 8자]" in llm.calls[3][-1]["content"]
+    assert spoken == ["확인해 볼게요.", "어떤 송금인지 볼게요."]                  # 조회 전 답은 고객에게 안 나감 (docs/09 G6)
+    assert s.trace.of("spoken")[0].data.get("by") == "code"                       # 첫 조회 전 한마디는 코드가 바로
+    assert [e.data["text"] for e in s.trace.of("unheard_drop")] == ["사기는 아니죠?", "확인해 볼게요."]
+    assert reply.text == "확인해 볼게요. 어떤 송금인지 볼게요."                   # 기록은 고객이 들은 그대로 (docs/09 G3)
+    assert "[이번 턴에 고객이 이미 들은 말 — 8자]" in llm.calls[3][-1]["content"]
 
 
 def test_earlier_turn_tool_results_reach_next_turn_prompt():
@@ -336,8 +338,8 @@ def test_greeting_not_in_worker_history():
 
 
 def _out_confirm(say, confirm, answer=None, tool=None):
-    return json.dumps({"intent": "continue", "pending_answer": answer, "slots": {}, "say": say,
-                       "tool": tool, "confirm": confirm}, ensure_ascii=False)
+    return json.dumps({"intent": "continue", "pending_answer": answer, "slots": {}, "tool": tool,
+                       "say": say, "confirm": confirm}, ensure_ascii=False)
 
 
 def test_spoken_confirmation_is_registered_so_customer_is_asked_once():

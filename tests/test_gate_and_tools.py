@@ -19,7 +19,7 @@ def _check(state, name, args):
 
 
 def _out(say="", tool=None, answer=None):
-    return json.dumps({"pending_answer": answer, "say": say, "tool": tool}, ensure_ascii=False)
+    return json.dumps({"pending_answer": answer, "tool": tool, "say": say}, ensure_ascii=False)   # tool이 say 앞 (실제 순서)
 
 
 # ---------------------------------------------------------------- 게이트 (상태 대조)

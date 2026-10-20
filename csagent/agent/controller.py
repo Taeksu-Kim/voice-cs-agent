@@ -26,6 +26,9 @@ from csagent.obs import event
 log = logging.getLogger("csagent.agent")
 
 _ASK_AGAIN = "어떤 도움이 필요하신지 한 번만 더 말씀해 주시겠어요?"
+# 턴 처리 중 예외(LLM·검색 서버 장애 등) — 고객에게 아무 말도 안 나가고 이력에서 고객 말이 빠지던 것을 막는다 (docs/09 G5)
+_TURN_ERROR = "죄송해요, 잠시 문제가 생겼어요. 한 번만 다시 말씀해 주시겠어요?"
+_TURN_ERROR_AGAIN = "계속 연결이 원활하지 않아서 상담원에게 연결해 드릴게요."
 
 
 class CallController:
@@ -45,6 +48,21 @@ class CallController:
     def respond_stream(self, state: CallState, turn: TurnInput) -> Iterator[AgentEvent]:
         t0 = time.perf_counter()
         start_turn(state, turn)
+        try:
+            yield from self._turn(state, turn, t0)
+        except Exception as e:   # 이미 나간 말은 되돌릴 수 없다 — 사과 한마디로 턴을 닫고, 연속이면 상담원에게 넘긴다
+            again = bool([x for x in state.trace.of("turn_error") if x.turn == state.turn - 1])
+            state.trace.add(state.turn, "turn_error", {"error": f"{type(e).__name__}: {e}"[:300], "handoff": again})
+            event(log, "turn_error", logging.ERROR, call_id=state.call_id, turn=state.turn,
+                  error=f"{type(e).__name__}: {e}"[:300], handoff=again)
+            text = _TURN_ERROR_AGAIN if again else _TURN_ERROR
+            yield AgentEvent("delta", {"text": text})
+            reply = AgentReply(text=text)
+            if again:
+                reply.end_call, reply.disposition = True, "transferred"
+            yield finish_turn(state, turn, reply)
+
+    def _turn(self, state: CallState, turn: TurnInput, t0: float) -> Iterator[AgentEvent]:
         if state.active is None:
             first, *rest = self._first_tasks(state, turn.utterance)
             self._assign(state, first)
@@ -83,6 +101,7 @@ class CallController:
             yield AgentEvent("delta", {"text": _ASK_AGAIN})
         elif outcome.intent == "done":
             state.active.done = True
+            state.finished.append(state.active)
             state.trace.add(state.turn, "task_done", {"task": state.active.name})
             event(log, "task_done", call_id=state.call_id, turn=state.turn, task=state.active.name)
             state.active = state.queue.pop(0) if state.queue else None
@@ -126,4 +145,12 @@ class CallController:
     @staticmethod
     def _assign(state: CallState, name: str) -> None:
         state.active = TaskState(name, started=True)
-        state.trace.add(state.turn, "task_start", {"task": name})
+        # 같은 통화에서 끝냈던 업무가 다시 시작되면 그때 한 조회·슬롯을 이어받는다 (docs/09 G8).
+        # 새로 시작하면 「첫 조회 전」으로 돌아가 절차 강제가 반복됐다 — 모델은 이전 결과를 알아서 다시 조회하지 않음
+        # (s3_b6 r1: 같은 업무 재시작 → 답 4번 버림 → 「확인해 볼게요」만 들림, runs/20261019_202026_C)
+        prev = next((t for t in reversed(state.finished) if t.name == name), None)
+        if prev is not None:
+            state.active.tools_done |= prev.tools_done
+            state.active.tools_empty |= prev.tools_empty
+            state.active.slots = {**prev.slots}
+        state.trace.add(state.turn, "task_start", {"task": name, "resumed": prev is not None})

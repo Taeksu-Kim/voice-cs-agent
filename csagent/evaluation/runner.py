@@ -66,6 +66,9 @@ def _converse(agent: Agent, customer: CustomerSimulator, scenario: Scenario, tr:
             tr.end_reason = "customer_hung_up"
             break
         reply = agent.respond(tr.state, TurnInput(utterance))
+        err = [e for e in tr.state.trace.of("turn_error") if e.turn == tr.state.turn]
+        if err:   # 에이전트는 사과로 턴을 닫지만(docs/09 G5) 평가에선 인프라 장애를 품질 점수에 섞지 않는다 → 건너뜀
+            raise RuntimeError(f"turn_error: {err[0].data['error']}")
         tr.replies.append(reply)
         if reply.disposition:
             tr.disposition = reply.disposition  # 링크 발송 등 중간 결과도 남기고, 마지막 값이 최종

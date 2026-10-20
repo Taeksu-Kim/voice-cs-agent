@@ -1,8 +1,9 @@
 """JSON 출력 스트림에서 "say" 값만 실시간으로 꺼내는 파서.
 
-에이전트는 {"intent": ..., ..., "say": "...", "tool": ...} JSON을 출력한다. 전체 JSON이 끝날 때까지
+에이전트는 {"intent": ..., ..., "tool": ..., "say": "...", ...} JSON을 출력한다. 전체 JSON이 끝날 때까지
 기다리면 음성 응답 시작이 늦어지므로, 생성 중인 문자열에서 say 값 부분만 글자 단위로 흘려보낸다.
-intent는 say보다 앞에 오므로, say가 흐르기 전에 「다른 업무로 전환(switch)」인지 알 수 있다.
+intent·tool은 say보다 앞에 오므로, say가 흐르기 전에 「다른 업무로 전환(switch)」인지, 어떤 도구를 부르는지 안다
+(막힐 도구면 그 말을 내보내지 않는다 — docs/09 G7).
 (우리가 정한 출력 형식을 읽는 것 — 말의 의미를 판단하는 정규식이 아니다)
 """
 
@@ -14,6 +15,7 @@ from typing import Optional
 
 _SAY_START = re.compile(r'"say"\s*:\s*"')
 _INTENT = re.compile(r'"intent"\s*:\s*"(\w+)"')
+_DECODER = json.JSONDecoder()
 _ESCAPES = {'"': '"', "\\": "\\", "/": "/", "n": "\n", "t": "\t", "r": "\r", "b": "", "f": ""}
 
 
@@ -27,6 +29,21 @@ class SayExtractor:
     def intent(self) -> Optional[str]:
         m = _INTENT.search(self._buf)
         return m.group(1) if m else None
+
+    @property
+    def started(self) -> bool:
+        return self._pos >= 0
+
+    def value(self, key: str) -> Optional[dict]:
+        """say 앞에 나온 키(tool·pending_answer)의 값 (say가 시작된 뒤에만 의미 있음). 없거나 null이면 None."""
+        m = re.search(rf'"{key}"\s*:\s*', self._buf)
+        if not m:
+            return None
+        try:
+            value, _ = _DECODER.raw_decode(self._buf, m.end())
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
 
     def feed(self, chunk: str) -> str:
         """새로 들어온 조각을 받고, 새로 확정된 say 글자들을 돌려준다."""
@@ -79,3 +96,14 @@ def announced_done(tool: str, said: str) -> Optional[str]:
     """이번 턴에 이미 tool을 하겠다고 말했으면, 도구 성공 뒤 붙일 완료 한마디를 돌려준다."""
     pair = _ANNOUNCED.get(tool)
     return pair[1] if pair and pair[0].search(said) else None
+
+
+# 「확인해 볼게요」로 턴이 끝나고 도구 호출이 없으면 고객은 결과를 기다리며 침묵한다 (10/15 실제 통화 cdff6cf088ce,
+# runs/20261016_175537_C) — docs/09 G2. 마지막 문장이 「지금 확인하겠다」는 약속일 때만 본다:
+# 약속 뒤에 답이 이어지면(「확인해 볼게요. … 확인됐어요」) 마지막 문장이 아니고, 조건절(「직접 전화 주시면 확인해 드릴게요」)은 나중 일이다
+_PROMISE = re.compile(r"(확인해|알아봐|조회해)\s?(볼게요|드릴게요|보겠습니다|드리겠습니다)[.!…]?$")
+
+
+def unkept_promise(say: str) -> bool:
+    last = re.split(r"(?<=[.?!])\s+", say.strip())[-1] if say.strip() else ""
+    return bool(_PROMISE.search(last)) and not re.search(r"면\s", last)

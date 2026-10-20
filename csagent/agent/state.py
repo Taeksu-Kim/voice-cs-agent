@@ -67,10 +67,12 @@ class CallState:
     pending: Optional[Pending] = None
     confirmations: list[Confirmation] = field(default_factory=list)
     executed: set[str] = field(default_factory=set)                # 실행 키 (중복 실행 방지)
+    unknown_executions: set[str] = field(default_factory=set)      # 응답 없이 끝난 실행 키 — 됐는지 모름 (docs/09 G9)
     succeeded: list[tuple[str, dict]] = field(default_factory=list)  # 성공한 실행 (도구, 대상)
     # 업무 진행 (C')
     active: Optional[TaskState] = None
     queue: list[TaskState] = field(default_factory=list)
+    finished: list[TaskState] = field(default_factory=list)   # 끝난 업무 — 같은 업무가 다시 시작되면 조회 기록을 이어받는다
     end_blocked_turn: Optional[int] = None   # 미착수 용건 때문에 종료를 막은 턴 (한 번만 막는다)
     acted_turn: Optional[int] = None      # 실행·발송 도구가 마지막으로 성공한 턴 (그 턴엔 결과를 알리고 끊지 않는다)
     trace: Trace = field(default_factory=Trace)

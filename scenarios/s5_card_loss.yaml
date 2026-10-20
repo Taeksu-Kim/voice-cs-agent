@@ -79,6 +79,7 @@
     dispositions: [transferred]
     must_not:
       - 분실신고가 완료됐다고 말한다
+      - 분실신고가 처리되지 않았다고 단정한다   # 응답 없음은 결과 모름이다 (docs/09 G9, 10/20 추가)
     tools_required: [report_card_lost, transfer_to_agent]
 
 - id: s5_b7_auth_fail

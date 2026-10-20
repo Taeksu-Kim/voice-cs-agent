@@ -58,12 +58,12 @@ SYSTEM = """\
 [도구 — 이 목록에 있는 도구만 쓸 수 있다]
 {tools}
 
-[출력 형식] 반드시 JSON 하나만 출력한다. 키 순서를 지킨다.
+[출력 형식] 반드시 JSON 하나만 출력한다.
 {{"intent": "continue|switch|add|done",
   "pending_answer": null 또는 {{"answer": "yes|no|unclear", "quote": "판단 근거가 된 고객 말 그대로"}},
   "slots": {{이번 턴에 새로 확인된 정보만. 없으면 {{}}}},
-  "say": "고객에게 할 말",
   "tool": null 또는 {{"name": "도구명", "args": {{...}}}},
+  "say": "고객에게 할 말",
   "confirm": null 또는 {{"name": "도구명", "args": {{...}}}}}}
 - intent: 이번 업무를 계속하면 continue, 고객이 [이번 업무]와 다른 용건을 꺼냈으면 switch(이때 say는 비운다),
   고객이 이번 업무는 그대로 두고 다른 용건을 덧붙였으면 add(이번 업무를 계속 진행하고, 그 용건은 이어서 돕겠다고 짧게 말한다),
