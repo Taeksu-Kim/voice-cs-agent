@@ -76,11 +76,12 @@ class TTSRequest(BaseModel):
 def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller] = (),
                web_dir: Optional[Path] = ROOT / "web", log_dir: Optional[Path] = None,
                root: Path = ROOT, voice_url: Optional[str] = None,
-               make_voice: Optional[Callable] = None, stack: Any = None) -> FastAPI:
+               make_voice: Optional[Callable] = None, stack: Any = None, silence_s: float = 8.0) -> FastAPI:
     """log_dir: 이 서버의 로그 폴더 (끝난 통화 저장·LLM 원문 조회 기본값). None이면 통화를 파일에 남기지 않는다.
     callers: 실제 테스트 탭 발신자 — 세션은 시나리오처럼 열린다 (Caller.to_scenario).
     voice_url: scripts/voice_server.py 주소 — 없으면 음성 통화 불가. make_voice는 테스트용 (VoiceClient·Endpointer 대체).
-    stack: 도구 스택(csagent/stack.py) — 세션은 stack.open으로 열린다 (업무 데이터를 도메인 API에 심음)."""
+    stack: 도구 스택(csagent/stack.py) — 세션은 stack.open으로 열린다 (업무 데이터를 도메인 API에 심음).
+    silence_s: 음성 통화 무응답 대기 — 이만큼 아무도 말하지 않으면 「들리세요?」, 한 번 더면 종료 안내 후 끊는다 (docs/09 C)."""
     app = FastAPI(title="customer-service-agent")
     store = SessionStore(stack.open) if stack is not None else SessionStore()
     scenarios = [c.to_scenario() for c in callers] + list(scenarios)
@@ -231,10 +232,11 @@ def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller]
             return
         client, endpointer = make_voice() if make_voice else (VoiceClient(voice_url), None)
         call = VoiceCall(ws, s, agent, client, turn_events=turn_events, on_ended=save_call,
-                         endpointer=endpointer, degrade=degrade)
+                         endpointer=endpointer, degrade=degrade, silence_s=silence_s)
         event(log, "voice_open", call_id=s.state.call_id, scenario=s.scenario_id, degrade=degrade)
         if (text := greeting_of(s.state.history)) and not s.replies and not s.voice_turns:
             await call.greet(text)
+        call.start_silence_watch()
         try:
             while True:
                 msg = await ws.receive()
@@ -245,7 +247,9 @@ def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller]
                 elif msg.get("text"):
                     ctl = json.loads(msg["text"])
                     if ctl.get("type") == "playing":
-                        call.playing = bool(ctl.get("on"))
+                        call.set_playing(bool(ctl.get("on")))
+                    elif ctl.get("type") in ("played", "cut"):
+                        call.on_playback(ctl)
                     elif ctl.get("type") == "hangup":
                         break
         except WebSocketDisconnect:

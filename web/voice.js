@@ -7,31 +7,40 @@ const SR = 16000;
 // ---------------------------------------------------------------- 재생기 (에이전트·데모 음성)
 
 class Player {
-  constructor(onPlaying) {
+  // onReport(kind, meta): 문장을 끝까지 재생함("played") / 재생 중 끊김("cut") — 서버가 고객이 들은 말을 안다 (docs/09 B)
+  constructor(onPlaying, onReport) {
     this.ctx = new AudioContext();
     this.sources = new Set();
     this.next = 0;
     this.onPlaying = onPlaying || (() => {});
+    this.onReport = onReport || (() => {});
   }
   async decode(bytes) { return this.ctx.decodeAudioData(bytes); }
   // 앞 소리 뒤에 이어 붙인다. 반환: 재생 시작까지 남은 초
-  play(buffer, at = 0) {
+  play(buffer, at = 0, meta = null) {
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(this.ctx.destination);
     const start = Math.max(this.ctx.currentTime + at, this.next);
     src.start(start);
+    src._start = start;
+    src._meta = meta;
     this.next = start + buffer.duration;
     this.sources.add(src);
     if (this.sources.size === 1) this.onPlaying(true);
     src.onended = () => {
       this.sources.delete(src);
+      if (meta) this.onReport("played", meta);
       if (!this.sources.size) this.onPlaying(false);
     };
     return { startIn: start - this.ctx.currentTime, endIn: this.next - this.ctx.currentTime };
   }
   stop() {
-    for (const s of this.sources) { s.onended = null; try { s.stop(); } catch {} }
+    for (const s of this.sources) {
+      s.onended = null;
+      if (s._meta && this.ctx.currentTime >= s._start) this.onReport("cut", s._meta);   // 듣던 중 끊김 (시작 전 문장은 안 들림)
+      try { s.stop(); } catch {}
+    }
     this.sources.clear();
     this.next = 0;
     this.onPlaying(false);
@@ -81,8 +90,9 @@ async function openMic(onFrame) {
 
 function prepareVoicePlayer() {   // 클릭 처리 안에서 동기로 불러야 한다 (자동재생 정책)
   voice.player?.close().catch(() => {});
-  voice.player = new Player((on) => voice.ws?.readyState === 1 &&
-    voice.ws.send(JSON.stringify({ type: "playing", on })));
+  const send = (msg) => voice.ws?.readyState === 1 && voice.ws.send(JSON.stringify(msg));
+  voice.player = new Player((on) => send({ type: "playing", on }),
+    (type, meta) => meta.tid != null && send({ type, tid: meta.tid, seq: meta.seq }));
   voice.player.ctx.resume();
 }
 
@@ -101,7 +111,7 @@ async function startVoice(sessionId) {
       const meta = pendingAudio;
       pendingAudio = null;
       const buf = await voice.player.decode(e.data);
-      voice.player.play(buf);
+      voice.player.play(buf, 0, meta);
       if (meta && voice.card) voice.card.querySelector(".sents")?.insertAdjacentHTML("beforeend",
         `<li>#${meta.seq} 합성 ${meta.gen_ms}ms · ${buf.duration.toFixed(1)}s — ${esc(meta.text)}</li>`);
       return;
@@ -164,6 +174,9 @@ function onVoiceMessage(m) {
       const left = Math.max(0, voice.player.next - voice.player.ctx.currentTime);
       setTimeout(() => endVoice("에이전트가 종료"), left * 1000 + 500);
     }
+  } else if (m.type === "hangup") {   // 서버가 끊음 (무응답) — 종료 안내를 다 들려준 뒤 끊는다
+    const left = voice.player ? Math.max(0, voice.player.next - voice.player.ctx.currentTime) : 0;
+    setTimeout(() => endVoice(m.reason === "no_response" ? "무응답으로 종료" : "서버가 종료"), left * 1000 + 500);
   } else if (m.type === "stop") {
     voice.player?.stop();
     setVad("끼어들기 — 재생 중단", "warn");
