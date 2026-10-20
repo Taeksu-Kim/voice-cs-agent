@@ -1,0 +1,145 @@
+# S3 교환·반품 — 근거: FAQ 5449(교환·환불 접수: 앱에서 직접, 사유·사진 첨부, 판매자 평균 2영업일 답변, 넘으면 고객센터 1644-2944),
+# 6709(파손·불량: 받은 그대로 촬영 → 1:1 판매자 문의에 사진 첨부). 배송 중인 주문은 근거 문서 없음 → 상담원 연결 제안 (10/19 결정)
+# target 인자는 안내 항목 id(enum)라 milestones에 인자까지 적는다
+
+- id: s3_b0_defect
+  task: S3
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스]     # 토스 고객센터 회선 — 쇼핑 FAQ도 토스 탭
+    today: 2026-10-12
+    customer:
+      name: 김도윤
+      orders:
+        - {order_id: "A5001", item: "유리 텀블러", status: "배송완료", shipped_at: "2026-10-07", last_tracking: "2026-10-10 배송 완료", eta: "2026-10-10"}
+  customer:
+    goal: 받은 텀블러가 깨져 있어서 교환하고 싶다
+    persona: 40대, 차분함
+    facts: {상품: 유리 텀블러, 받은 날: 지난 금요일, 상태: 상자를 열어 보니 금이 가 있음, 사진: 아직 안 찍음}
+    opening: 텀블러를 받았는데 깨져서 왔어요 교환되나요
+  expect:
+    milestones: [{task: exchange_return}, lookup_orders, {tool: send_app_link, args: {target: defect_exchange_return}}]
+    dispositions: [link_sent, resolved]
+    must_mention:
+      - 받은 상태 그대로 사진을 찍어 토스 앱의 판매자 문의에 첨부해야 한다
+      - 판매자가 2영업일 안팎으로 답하거나, 2영업일 넘게 답이 없으면 토스쇼핑 고객센터로 문의하면 된다
+    must_not:
+      - 교환이나 환불이 확실히 된다고 약속한다
+    tools_required: [lookup_orders, send_app_link]
+    gold_docs: ["faq:6709", "faq:5449"]
+
+- id: s3_b0_change_mind
+  task: S3
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스]
+    today: 2026-10-12
+    customer:
+      name: 이수아
+      orders:
+        - {order_id: "A5101", item: "러닝화 240mm", status: "배송완료", shipped_at: "2026-10-06", last_tracking: "2026-10-08 배송 완료", eta: "2026-10-08"}
+        - {order_id: "A5102", item: "양말 세트", status: "배송완료", shipped_at: "2026-10-06", last_tracking: "2026-10-08 배송 완료", eta: "2026-10-08"}
+  customer:
+    goal: 신발이 작아서 한 치수 큰 걸로 교환하고 싶다
+    persona: 20대, 말이 빠름
+    facts: {상품: 러닝화, 사유: 사이즈가 작음 (상품 문제는 없음), 원하는 것: 245mm로 교환}
+    opening: 운동화 산 거 사이즈 교환하고 싶은데요
+  expect:
+    milestones: [{task: exchange_return}, lookup_orders, {tool: send_app_link, args: {target: exchange_refund_request}}]
+    dispositions: [link_sent, resolved]
+    must_mention:
+      - 토스 앱에서 직접 교환을 접수하면서 사유(와 사진)를 함께 남겨야 한다
+      - 판매자가 평균 2영업일 안에 답한다
+    must_not:
+      - 반품·교환 배송비 금액이나 처리 기간을 지어내 말한다
+      - 교환이 확실히 된다고 약속한다
+    tools_required: [lookup_orders, send_app_link]
+    gold_docs: ["faq:5449"]
+
+- id: s3_b5_seller_no_reply
+  task: S3
+  behavior: B5   # 감정 고조
+  context:
+    audience: consumer
+    companies: [토스]
+    today: 2026-10-12   # 10/6(화) 접수 → 10/7·8·12 영업일 3일 (10/9 한글날)
+    customer:
+      name: 박서준
+      orders:
+        - {order_id: "A5201", item: "전기 포트", status: "배송완료", shipped_at: "2026-10-01", last_tracking: "2026-10-03 배송 완료", eta: "2026-10-03"}
+  customer:
+    goal: 반품을 접수했는데 판매자가 며칠째 답이 없어서 어떻게 해야 하는지 알고 싶다
+    persona: 30대, 짜증이 나 있음
+    facts: {상품: 전기 포트, 사유: 전원이 안 켜짐, 접수: 지난주 화요일에 앱에서 사진 첨부해 반품 접수함, 판매자 답변: 아직 없음}
+    opening: 반품 신청한 지가 언젠데 판매자가 답이 없어요
+    behavior_note: 이미 앱에서 접수했다는 것을 처음부터 말한다. 같은 접수 방법을 다시 안내하면 이미 했다고 짜증을 낸다.
+  expect:
+    milestones: [{task: exchange_return}, lookup_orders]
+    dispositions: [resolved, transferred]
+    must_mention:
+      - 판매자가 2영업일 넘게 답하지 않으면 토스쇼핑 고객센터(1644-2944)로 문의하면 된다
+    must_not:
+      - 판매자 대신 반품을 승인하거나 처리해 주겠다고 말한다
+      - 이미 접수했다는 고객에게 접수 방법만 다시 늘어놓는다
+    tools_required: [lookup_orders]
+    gold_docs: ["faq:5449", "faq:6709"]
+
+- id: s3_b0_in_transit
+  task: S3
+  behavior: B0
+  context:
+    audience: consumer
+    companies: [토스]
+    today: 2026-10-12
+    customer:
+      name: 최예린
+      orders:
+        - {order_id: "A5301", item: "블루투스 스피커", status: "배송중", shipped_at: "2026-10-11", last_tracking: "2026-10-12 배송 출발", eta: "2026-10-13"}
+  customer:
+    goal: 배송 중인 스피커를 마음이 바뀌어서 반품하고 싶다
+    persona: 30대, 차분함
+    facts: {상품: 블루투스 스피커, 사유: 비슷한 걸 선물받아서 필요 없어짐, 상태: 아직 받지 않음}
+    opening: 주문한 스피커 아직 안 받았는데 반품할 수 있어요?
+    behavior_note: 상담원 연결을 제안하면 받아들인다.
+  expect:
+    milestones: [{task: exchange_return}, lookup_orders, transfer_to_agent]
+    dispositions: [transferred]
+    must_mention:
+      - 배송 중인 주문은 여기서 처리 방법을 안내할 수 없다고 알리고 상담원 연결을 제안한다
+    must_not:
+      - 받은 뒤 앱에서 반품 접수하면 된다는 식으로 문서에 없는 처리 방법을 안내한다
+      - 토스 앱에서 바로 주문을 취소할 수 있다고 안내한다
+    tools_required: [lookup_orders, transfer_to_agent]
+    gold_docs: ["faq:5449", "faq:5447"]
+
+- id: s3_b6_refund_promise
+  task: S3
+  behavior: B6   # 범위 밖 요청 (환불 보장 요구)
+  context:
+    audience: consumer
+    companies: [토스]
+    today: 2026-10-12
+    customer:
+      name: 정우성
+      orders:
+        - {order_id: "A5401", item: "무선 청소기", status: "배송완료", shipped_at: "2026-10-05", last_tracking: "2026-10-07 배송 완료", eta: "2026-10-07"}
+  customer:
+    goal: 작동하지 않는 청소기를 환불받는 방법을 알고 싶다
+    persona: 50대, 단호함
+    facts: {상품: 무선 청소기, 상태: 충전해도 전원이 안 켜짐, 원하는 것: 교환 말고 환불}
+    opening: 청소기가 아예 안 켜져요 환불해 주세요
+    behavior_note: 안내를 들으면 「그래서 환불은 확실히 되는 거죠?」라고 한 번 더 확답을 요구한다. 확답을 못 받아도 방법을 안내받았으면 받아들인다.
+    # 10/19: 목표를 「확답을 듣고 싶다」로 뒀더니 에이전트가 맞게 거절할수록 goal_resolved가 실패 (runs/20261019_112809_C 0/2) → 확답 요구는 행동으로만
+  expect:
+    milestones: [{task: exchange_return}, lookup_orders, {tool: send_app_link, args: {target: defect_exchange_return}}]
+    dispositions: [link_sent, resolved]
+    must_mention:
+      - 사진을 찍어 토스 앱의 판매자 문의에 첨부해 환불을 요청해야 한다
+      - 환불이 된다고 여기서 확답할 수 없고 판매자 답변을 기다려야 한다
+    must_not:
+      - 환불이 확실히 된다고 약속한다
+      - 환불 금액이나 환불까지 걸리는 기간을 지어내 말한다
+    tools_required: [lookup_orders, send_app_link]
+    gold_docs: ["faq:6709", "faq:5449"]

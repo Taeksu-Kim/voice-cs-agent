@@ -1,7 +1,7 @@
 """C' 워커 정의 — 업무별 지시문·허용 도구. 모델은 하나(27B)를 공유하고 정책만 다르게 쓴다.
 
 워커는 「절차·도구 권한·상태 관리가 실제로 다른 곳」에서만 나눈다.
-업무 절차의 근거: 토스 고객센터 FAQ(139 착오송금, 3919 유스카드 분실, 4705·6711 배송),
+업무 절차의 근거: 토스 고객센터 FAQ(139 착오송금, 3919 유스카드 분실, 4705·6711 배송, 5449·6709 교환·반품),
 토스쇼핑 판매자 문서(셀러 페널티, 페널티 소명 가이드).
 """
 
@@ -40,6 +40,15 @@ CARD_LOSS = Worker(
                # 카드사 번호는 카드 신청·이벤트 FAQ에만 있어 분실신고 번호라는 근거가 없다 → 말하지 않음 (지시문만으론 샘, 10/16 회귀)
                toss_numbers_only=True))
 
+_EXCHANGE_RETURN_PROTOCOL = load_protocol("exchange_return")   # 단계별 절차: agent/protocols/exchange_return.yaml
+
+EXCHANGE_RETURN = Worker(
+    "exchange_return", "토스쇼핑에서 산 상품의 교환·반품·환불 요청, 받은 상품이 파손·불량, 주문 취소",
+    TurnPolicy("exchange_return", _EXCHANGE_RETURN_PROTOCOL.full_text(),
+               tools=("lookup_orders", "send_app_link", "transfer_to_agent", "end_call"),
+               first_tool="lookup_orders",
+               protocol=_EXCHANGE_RETURN_PROTOCOL))
+
 WRONG_TRANSFER = Worker(
     "wrong_transfer", "송금을 잘못 보냄(착오송금), 보낸 돈을 돌려받고 싶음",
     TurnPolicy("wrong_transfer", """\
@@ -54,7 +63,7 @@ WRONG_TRANSFER = Worker(
    - 거래대금인데 물건을 못 받았거나 상대와 연락이 안 됨, 또는 타인요구: 사기 의심이다. 되묻지 말고
      바로 transfer_to_agent로 연결한다 (summary에 경위 포함).
    - 실수 + 받은 사람이 아는 사람: 직접 연락해 돌려달라고 요청하는 게 가장 빠르다고 안내한다.
-   - 실수 + 모르는 사람: send_app_link로 「착오송금 접수」 화면을 보내고, 접수 후 4주 정도 걸리며
+   - 실수 + 모르는 사람: send_app_link(target=wrong_transfer_report)로 착오송금 접수 안내를 보내고, 접수 후 4주 정도 걸리며
      상대방 동의가 없으면 돌려받기 어려울 수 있다고 알린다.
    - 실수 + 본인 계좌: 해당 은행에 먼저 문의하도록 안내한다.
 - 착오송금 접수는 transfer_reason이 실수일 때만 쓸 수 있다 (코드가 막는다).
@@ -80,7 +89,7 @@ PENALTY_NOTICE = Worker(
    30일 합산 10점이 되면 이용이 정지된다는 기준만 알리고 위반 항목을 알려 드릴지 묻는다.
    원하면 다음 응답에서 주요 위반 항목과 점수를 알린다 (전화로 숫자를 한꺼번에 들으면 기억하기 어렵다).
 4) 고객이 반발하거나 사유를 말하면, [참고 문서] 기준으로 소명할 수 있는 경우인지 안내하고
-   send_app_link로 「페널티 소명 가이드」를 보낸다. 페널티를 없애거나 줄여 주겠다고 약속하지 않는다.
+   send_app_link(target=seller_penalty_appeal)로 페널티 소명 가이드를 보낸다. 페널티를 없애거나 줄여 주겠다고 약속하지 않는다.
    소명 뒤의 일(심사에 걸리는 시간, 점수 취소 여부, 결과를 누가 어떻게 알리는지)은 [참고 문서]에 있는 것만 말한다.
    없으면 그 부분은 여기서 안내해 드릴 수 없고 보내 드린 소명 가이드에서 확인하시라고 한다.
 5) 고객이 이해했거나 조치를 약속하면 짧게 정리하고 end_call(resolved)로 마친다.
@@ -91,4 +100,4 @@ PENALTY_NOTICE = Worker(
                       "transfer_to_agent", "end_call")),
     inbound=False)
 
-WORKERS: dict[str, Worker] = {w.name: w for w in (GENERAL, CARD_LOSS, WRONG_TRANSFER, PENALTY_NOTICE)}
+WORKERS: dict[str, Worker] = {w.name: w for w in (GENERAL, EXCHANGE_RETURN, CARD_LOSS, WRONG_TRANSFER, PENALTY_NOTICE)}
