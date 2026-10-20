@@ -50,6 +50,17 @@ class Trace:
         self.events.append(TraceEvent(turn, kind, data, step=self.step, at=at if n == 1 else f"{at}#{n}",
                                       where=self.where))
 
+    @classmethod
+    def load(cls, dicts: list[dict[str, Any]]) -> "Trace":
+        """저장된 trace(to_dicts)로 — 이어서 기록해도 좌표가 겹치지 않게 본 좌표를 센다."""
+        tr = cls([TraceEvent(**{k: d[k] for k in ("turn", "kind", "data", "t", "step", "at", "where") if k in d})
+                  for d in dicts])
+        for e in tr.events:
+            base = e.at.split("#")[0]
+            tr._seen[base] = tr._seen.get(base, 0) + 1
+        tr.where = tr.events[-1].where if tr.events else ""
+        return tr
+
     def of(self, kind: str) -> list[TraceEvent]:
         return [e for e in self.events if e.kind == kind]
 

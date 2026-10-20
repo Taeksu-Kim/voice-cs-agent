@@ -97,6 +97,22 @@ class CallState:
             "end_blocked_turn": self.end_blocked_turn, "acted_turn": self.acted_turn,
         }
 
+    def restore(self, snap: dict[str, Any]) -> None:
+        """snapshot()의 역 — 재현기(csagent/evaluation/repro.py)가 기록된 턴 시작 상태로 되돌린다."""
+        def task(d: Optional[dict[str, Any]]) -> Optional[TaskState]:
+            return d and TaskState(d["name"], d["stage"], dict(d["slots"]), d["done"], set(d["tools_done"]),
+                                   set(d["tools_empty"]), d["started"])
+        p = snap["pending"]
+        self.authenticated, self.auth_failures = snap["authenticated"], snap["auth_failures"]
+        self.contact_verified = snap["contact_verified"]
+        self.pending = p and Pending(p["kind"], p["turn"], [(a, dict(t)) for a, t in p["items"]])
+        self.confirmations = [Confirmation(a, dict(t), n) for a, t, n in snap["confirmations"]]
+        self.executed, self.unknown_executions = set(snap["executed"]), set(snap["unknown_executions"])
+        self.succeeded = [(a, dict(t)) for a, t in snap["succeeded"]]
+        self.active, self.queue = task(snap["active"]), [task(t) for t in snap["queue"]]
+        self.finished = [task(t) for t in snap["finished"]]
+        self.end_blocked_turn, self.acted_turn = snap["end_blocked_turn"], snap["acted_turn"]
+
     # -- 재확인 --
 
     def ask(self, kind: PendingKind) -> None:
