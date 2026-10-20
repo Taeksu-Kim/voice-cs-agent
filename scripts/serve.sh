@@ -4,6 +4,7 @@
 #   bash scripts/serve.sh start [27b|9b]   # 기본 27b
 #   bash scripts/serve.sh stop
 #   bash scripts/serve.sh status
+#   bash scripts/serve.sh restart-tools    # 도메인 API·도구 서버만 다시 (카탈로그·도메인 코드를 바꿨을 때)
 #
 # 구성 (2026-10-12 실측으로 정한 배치)
 #   :8011  임베딩 Qwen3-Embedding-0.6B — CPU (쿼리 1건씩이라 충분, GPU를 LLM에 양보)
@@ -15,14 +16,17 @@
 #   :8000  LLM Qwen3.5-9B-FP8 (대안)
 #   :8013  음성 scripts/voice_server.py (env voice-eval) — STT Whisper turbo int8 GPU 약 1.55GB, TTS Supertonic 3 CPU
 #          (2026-10-14 실측: STT·TTS를 둘 다 GPU에 두면 넘침 → TTS는 CPU). LLM 다음에 띄운다
+#   :8020  도메인 API · :8021 도구 서버(MCP) — scripts/run_tools.py (env customer-service-agent, GPU 안 씀, 127.0.0.1)
+#          평가·웹 서버보다 먼저 떠 있어야 한다 (docs/08 3절)
 # GPU를 꽉 채우면 Windows가 GPU 메모리를 시스템 메모리로 넘겨 생성이 초당 3~4토큰까지 느려진다 → 여유를 남긴다.
 # start는 .env의 LLM_URL·LLM_MODEL·EMBEDDER_URL·RERANKER_URL을 현재 WSL IP로 갱신한다.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# 기계마다 다른 경로는 .serve.env(커밋 안 함)에서 덮어쓴다: VENV · MODEL_27B · MODEL_9B · CPU_EMBED_SERVER
+# 기계마다 다른 경로는 .serve.env(커밋 안 함)에서 덮어쓴다: VENV · APP_PY · MODEL_27B · MODEL_9B · CPU_EMBED_SERVER
 [ -f "$ROOT/.serve.env" ] && . "$ROOT/.serve.env"
 VENV=${VENV:-$HOME/miniconda3/envs/vllm}
+APP_PY=${APP_PY:-$HOME/miniconda3/envs/customer-service-agent/bin/python}
 LOGDIR=${LOGDIR:-$HOME/csagent_logs}; mkdir -p "$LOGDIR"
 IP=$(hostname -I | awk '{print $1}')
 export VLLM_USE_FLASHINFER_SAMPLER=0 PYTHONUNBUFFERED=1
@@ -44,6 +48,23 @@ wait_up() { # url pattern log name
 set_env() { # key value
   touch "$ROOT/.env"
   if grep -q "^$1=" "$ROOT/.env"; then sed -i "s#^$1=.*#$1=$2#" "$ROOT/.env"; else echo "$1=$2" >> "$ROOT/.env"; fi
+}
+
+start_tools() {
+  if up "http://127.0.0.1:8020/health" '"domain"' && up "http://127.0.0.1:8021/health" '"catalog"'; then
+    echo "ok: 도메인 API·도구 서버 이미 실행 중"; return 0; fi
+  (cd "$ROOT" && setsid nohup "$APP_PY" scripts/run_tools.py > "$LOGDIR/tools.log" 2>&1 &)
+  wait_up "http://127.0.0.1:8020/health" '"domain"' "$LOGDIR/tools.log" "도메인 API" || return 1
+  wait_up "http://127.0.0.1:8021/health" '"catalog"' "$LOGDIR/tools.log" "도구 서버(MCP)"
+}
+
+stop_tools() {
+  for pat in "[s]cripts/run_tools.py" "[c]sagent.domain.app:create_dev_app" "[c]sagent.toolserver.server:create_default_app"; do
+    for p in $(pgrep -f "$pat"); do kill "$p" 2>/dev/null; done
+  done
+  local n=0
+  while { up "http://127.0.0.1:8020/health" '"domain"' || up "http://127.0.0.1:8021/health" '"catalog"'; } && [ $n -lt 10 ]; do
+    sleep 1; n=$((n+1)); done
 }
 
 start() {
@@ -93,6 +114,8 @@ start() {
     wait_up "http://$IP:8013/health" supertonic "$LOGDIR/voice.log" "음성(STT·TTS)" || return 1
   else echo "ok: 음성 이미 실행 중"; fi
 
+  start_tools || return 1
+
   set_env LLM_URL "http://$IP:$port/v1"
   set_env LLM_MODEL "$name"
   set_env EMBEDDER_URL "http://$IP:8011/v1"
@@ -102,6 +125,7 @@ start() {
 }
 
 stop() {
+  stop_tools
   # 패턴에 대괄호를 넣어 이 스크립트 자신의 명령줄이 걸리지 않게 한다
   for pat in "[Q]wen3.8-27B-INT4" "[Q]wen3.5-9B-FP8" "[Q]wen3-Reranker-0.6B" "[c]pu_embed_server.py" "[v]oice_server.py"; do
     for p in $(pgrep -f "$pat"); do kill "$p" 2>/dev/null; done
@@ -118,6 +142,10 @@ status() {
     IFS='|' read -r path pat name <<< "$s"
     if up "http://$IP:$path" "$pat"; then echo "● $name"; else echo "○ $name"; fi
   done
+  for s in '8020/health|"domain"|도메인 API' '8021/health|"catalog"|도구 서버(MCP)'; do
+    IFS='|' read -r path pat name <<< "$s"
+    if up "http://127.0.0.1:$path" "$pat"; then echo "● $name"; else echo "○ $name"; fi
+  done
   echo "GPU: $(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)"
 }
 
@@ -125,5 +153,6 @@ case "${1:-status}" in
   start) start "${2:-27b}" ;;
   stop) stop ;;
   status) status ;;
-  *) echo "사용법: $0 start [27b|9b] | stop | status"; exit 1 ;;
+  restart-tools) stop_tools; start_tools ;;
+  *) echo "사용법: $0 start [27b|9b] | stop | status | restart-tools"; exit 1 ;;
 esac

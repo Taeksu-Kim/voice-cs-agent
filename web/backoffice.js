@@ -50,8 +50,10 @@ const SCREENS = {
     result: (r) => `<div class="big warn">일시정지 처리됨 · ${esc(r.card_id)}</div>` },
   report_card_lost: { menu: "카드 › 분실신고", input: (a) => [["대상 카드", cardLabel(a.card_id)]],
     result: (r) => `<div class="big err">분실신고 접수됨 · ${esc(r.card_id)}</div>` },
-  send_app_link: { menu: "안내 › 앱 화면 링크 문자", input: (a) => [["보낼 화면", a.target], ["받는 번호", "고객 등록 휴대폰"]],
-    result: (r) => `<div class="big ok">✉ 발송 완료 · ${esc(r.target)}</div>` },
+  // target은 안내 항목 id — 이름·링크는 도메인 API가 지식 베이스에서 찾은 값 (domain/guides.yaml)
+  send_app_link: { menu: "안내 › 안내 링크 문자", input: (a) => [["안내 항목", a.target], ["받는 번호", "고객 등록 휴대폰"]],
+    result: (r) => `<div class="big ok">✉ 발송 완료 · ${esc(r.title || r.target)}</div>` +
+      (r.url ? `<div class="foot">보낸 링크 <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></div>` : "") },
   schedule_callback: { menu: "상담 › 재통화 예약", input: (a) => [["희망 시각", a.when]],
     result: (r) => `<div class="big ok">📅 예약됨 · ${esc(r.when)}</div>` },
   record_lead: { menu: "아웃바운드 › 리드 기록",
@@ -118,6 +120,7 @@ function backofficeTrace(ev) {
       stamp(el, "완료", "ok");
       if (name === "lookup_cards") for (const c of result.cards || []) bo.cards[c.card_id] = c;
       if (name === "request_app_auth" && result.status === "success") backofficeState({ authenticated: true });
+      if (risk === "execute" || risk === "notify") refreshCrm();   // 정보 패널에 실행 결과 반영 (app.js)
       const waited = bo.waiting[name];
       if (waited) {   // 앞 턴에서 동의를 기다리던 요청 — 동의를 받아 이번에 실행됐다
         stamp(waited, "동의 후 실행", "done");

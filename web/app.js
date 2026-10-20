@@ -1,6 +1,7 @@
 // 상담 에이전트 콘솔 — 세션을 열고, 발화마다 SSE 스트림(POST)을 읽어 화면에 그린다.
 const $ = (id) => document.getElementById(id);
-const state = { sessionId: null, scenarios: [], callers: [], caller: null, situation: null, controller: null, turnNo: 0 };
+const state = { sessionId: null, scenarios: [], callers: [], caller: null, situation: null, controller: null, turnNo: 0,
+                crm: null };   // crm: 도메인 API의 현재 업무 데이터 (실행 결과 반영) — 없으면 통화 시작 때 CRM
 
 async function api(path, body) {
   const res = await fetch(path, body ? {
@@ -67,7 +68,7 @@ function refLabel(c, ref) {
 function renderInfo() {
   const c = state.caller, sit = state.situation;
   if (!c) { $("info").innerHTML = `<div class="muted">발신자를 고르세요.</div>`; return; }
-  const cu = c.customer;
+  const cu = { ...c.customer, ...(state.crm || {}) };
   const head = `<div class="who"><b>${esc(c.name)}</b>${c.direction === "outbound"
     ? ' <span class="pill warn">아웃바운드 — 전화를 받는 쪽, 먼저 「여보세요」</span>' : ""} <span class="muted">오늘 ${esc(c.today)}</span>
     ${voice.ws || $("main").dataset.view === "pick" ? "" : '<button type="button" class="link" id="repick">← 다른 발신자·상황</button>'}</div>`;
@@ -86,12 +87,22 @@ function infoRow(cu, ref) {
   const row = (label, cells) => `<tr><th>${label}</th><td>${cells.filter(Boolean).join(" · ")}</td></tr>`;
   if (kind === "order") return row("주문", [`<b>${esc(x.order_id)}</b>`, esc(x.item), esc(x.status),
     x.shipped_at && `발송 ${esc(x.shipped_at)}`, `최근 기록 ${esc(x.last_tracking || "없음")}`, x.eta && `도착 예정 ${esc(x.eta)}`]);
-  if (kind === "card") return row("카드", [`<b>${esc(x.name)}</b>`, `끝 4자리 <b>${esc(x.last4)}</b>`]);
+  if (kind === "card") return row("카드", [`<b>${esc(x.name)}</b>`, `끝 4자리 <b>${esc(x.last4)}</b>`, x.status && pill(x.status)]);
   if (kind === "transfer") return row("송금", [esc(x.date), `받는 분 ${esc(x.to_name)}`, esc(x.bank), `<b>${won(x.amount)}</b>`]);
   if (kind === "seller") return row("상점", [`<b>${esc(x.store_name)}</b>`, `담당자 ${esc(x.manager_name)}`,
     x.penalty_points_30d != null && `최근 30일 페널티 ${x.penalty_points_30d}점`,
     ...(x.items || []).map((i) => `${esc(i.type)} ${i.points}점`)]);
   return "";
+}
+
+// 실행·발송 도구가 성공하면 도메인 API의 현재 데이터를 다시 읽어 정보 패널에 반영한다 (docs/08 11-1 6번).
+// 기록 재생(데모)은 세션이 없어 그대로 둔다
+async function refreshCrm() {
+  if (!state.sessionId || !state.caller) return;
+  try {
+    const { data } = await (await api(`/api/sessions/${state.sessionId}/crm`)).json();
+    if (data) { state.crm = data; renderInfo(); }
+  } catch { /* 화면 갱신 실패는 통화와 무관 */ }
 }
 
 function setView(view) {   // pick: 발신자·상황 고르기 / chat: 통화 화면
@@ -114,6 +125,7 @@ async function startCall() {
   const data = await (await api("/api/sessions", { scenario_id: c.id, mode, situation: sit?.id || "" })).json();
   state.sessionId = data.session_id;
   state.turnNo = 0;
+  state.crm = null;
   $("chat").innerHTML = "";
   $("turns").innerHTML = "";
   $("callstate").innerHTML = "";
@@ -288,6 +300,7 @@ const TRACE = {
   llm: (d) => ["🤖", `LLM ${esc(d.role)} ${d.ms}ms${rawButton(d.call_id)}`, `토큰 ${d.prompt_tokens}+${d.completion_tokens}`],
   intent: (d) => ["↪", `업무 전환 요청 (${esc(d.worker)})`],
   step_enforced: (d) => ["⛔", `절차 강제: 먼저 <b>${esc(d.tool)}</b>`, "", "warn"],
+  promise_nudge: (d) => ["⛔", "확인하겠다고 하고 도구 없음 → 되돌림", esc(d.say), "warn"],
   pending: (d) => ["❓", `질문 걸어 둠: ${d.kind === "confirm" ? `실행 동의 ${esc(d.action)}` : "담당자 확인"}`, json(d.target)],
   pending_answer: (d) => [d.verified ? "✅" : "⚠", `고객 답 판정 <b>${esc(d.answer)}</b> ${d.verified ? "(확정)" : "(미확정)"}`,
     `인용: "${esc(d.quote)}"`, d.verified ? "ok" : "warn"],
