@@ -146,6 +146,8 @@ class TurnLoop:
             slots: Optional[dict] = None, t0: Optional[float] = None) -> Iterator[AgentEvent | LoopOutcome]:
         """이벤트를 내보내고, 마지막에 LoopOutcome을 하나 내보낸다."""
         t0 = t0 or time.perf_counter()
+        state.trace.where = policy.name if policy.protocol is None else \
+            f"{policy.name}/{policy.protocol.current(state).id}"   # 좌표의 절차 축 (trace.py) — 검색 이벤트부터 맞게
         hits = self._retrieve(state, utterance, policy)
         t_retrieve = (time.perf_counter() - t0) * 1000
         if hits is not None:
@@ -170,6 +172,7 @@ class TurnLoop:
 
         for step in range(1, self.max_steps + 1):
             yield AgentEvent("step", {"worker": policy.name, "step": step})   # 화면에 「LLM 생성 중」 표시용
+            state.trace.step += 1   # 좌표의 스텝 — 한 턴에 워커가 바뀌어도 이어 센다 (trace.py)
             extractor, result, spoken, closed = SayExtractor(), None, "", False
             screen = SpeechScreen(allowed)
             # 첫 조회 전 — 조회는 코드가 강제하므로 이 스텝의 모델 말은 내보내지 않는다 (docs/09 G6).
@@ -613,6 +616,7 @@ class TurnLoop:
         if policy.protocol is None:
             return None
         step = policy.protocol.current(state)
+        state.trace.where = f"{policy.name}/{step.id}"
         if prev is not None and step.id == prev.id:
             return prev
         state.trace.add(state.turn, "protocol_step", {"worker": policy.name, "step": step.id})

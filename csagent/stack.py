@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,15 +41,43 @@ class ToolStack:
         return {"catalog": self.tools.catalog_digest, **git_version(), "tool_warnings": list(self.tools.warnings)}
 
 
+def _git(*args: str) -> str:
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=5).stdout
+
+
 def git_version() -> dict[str, Any]:
+    """커밋 + 커밋 안 된 변경. dirty면 diff_sha(변경 내용 해시)를 붙인다 — 같은 커밋 위의 다른 수정을 구분한다."""
     try:
-        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True,
-                              text=True, timeout=5).stdout.strip()
-        dirty = bool(subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
-                                    capture_output=True, text=True, timeout=5).stdout.strip())
+        head = _git("rev-parse", "--short", "HEAD").strip()
+        diff = _git("diff", "HEAD")
     except (OSError, subprocess.SubprocessError):
         return {"commit": "", "dirty": None}
-    return {"commit": head, "dirty": dirty}
+    out: dict[str, Any] = {"commit": head, "dirty": bool(diff)}
+    if diff:
+        out["diff_sha"] = hashlib.sha1(diff.encode()).hexdigest()[:12]
+    return out
+
+
+def model_versions(s: Optional[Settings] = None) -> dict[str, Any]:
+    """설정의 모델 이름 + LLM 서버가 실제로 서빙 중인 모델 id (설정과 서빙이 어긋난 걸 잡는다)."""
+    s = s or load_settings()
+    out: dict[str, Any] = {"llm": s.llm_model, "embedder": s.embedder_model, "reranker": s.reranker_model}
+    try:
+        out["llm_served"] = [m["id"] for m in httpx.get(f"{s.llm_url}/models", timeout=3).json()["data"]]
+    except (httpx.HTTPError, KeyError, ValueError):
+        out["llm_served"] = None
+    return out
+
+
+def record_versions(stack: "ToolStack", out_dir: Path) -> dict[str, Any]:
+    """실행 하나의 버전 기록 (평가 run_meta·서버 server_meta). dirty면 변경 내용을 code_<diff_sha>.diff로 남긴다
+    — 커밋만으로는 그때 코드·지시문을 되살릴 수 없다."""
+    meta = {**stack.versions(), "models": model_versions()}
+    if meta.get("diff_sha"):
+        path = out_dir / f"code_{meta['diff_sha']}.diff"
+        if not path.exists():
+            path.write_text(_git("diff", "HEAD"), encoding="utf-8")
+    return meta
 
 
 def remote_stack(s: Optional[Settings] = None) -> ToolStack:

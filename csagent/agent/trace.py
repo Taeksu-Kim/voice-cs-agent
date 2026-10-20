@@ -11,6 +11,12 @@
 - tool_result  실행 결과 (성공·실패)
 - guardrail    가드레일 발동 (층·규칙·조치)
 - reply        최종 응답
+- state        턴 시작 때 통화 상태 스냅샷 (재현기가 이 턴부터 다시 시작할 때 쓴다)
+- call_open    통화 시작 때 도메인 데이터 (고객·주문·카드 픽스처)
+
+좌표 (재현·그림용): 이벤트마다 at = "t<턴>.s<스텝>.<종류>" (같은 스텝에 같은 종류가 또 나오면 "#2"),
+where = "<업무>/<프로토콜 단계>". 스텝 0은 LLM 전 (라우팅·검색), 1부터 LLM 스텝 (한 턴 안에서 워커가 바뀌어도 이어 센다).
+통화 전체 주소는 "<call_id>@<at>" — scripts/trace_graph.py가 그린 mermaid 노드 id가 이 좌표다.
 """
 
 from __future__ import annotations
@@ -26,14 +32,23 @@ class TraceEvent:
     kind: str
     data: dict[str, Any]
     t: float = field(default_factory=time.time)
+    step: int = 0
+    at: str = ""
+    where: str = ""
 
 
 @dataclass
 class Trace:
     events: list[TraceEvent] = field(default_factory=list)
+    step: int = 0       # 지금 스텝 (start_turn이 0으로, 루프가 LLM 스텝마다 올린다)
+    where: str = ""     # 지금 업무/단계 (루프가 갱신)
+    _seen: dict[str, int] = field(default_factory=dict, repr=False)
 
     def add(self, turn: int, kind: str, data: dict[str, Any]) -> None:
-        self.events.append(TraceEvent(turn, kind, data))
+        at = f"t{turn}.s{self.step}.{kind}"
+        n = self._seen[at] = self._seen.get(at, 0) + 1
+        self.events.append(TraceEvent(turn, kind, data, step=self.step, at=at if n == 1 else f"{at}#{n}",
+                                      where=self.where))
 
     def of(self, kind: str) -> list[TraceEvent]:
         return [e for e in self.events if e.kind == kind]

@@ -76,12 +76,14 @@ class TTSRequest(BaseModel):
 def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller] = (),
                web_dir: Optional[Path] = ROOT / "web", log_dir: Optional[Path] = None,
                root: Path = ROOT, voice_url: Optional[str] = None,
-               make_voice: Optional[Callable] = None, stack: Any = None, silence_s: float = 8.0) -> FastAPI:
+               make_voice: Optional[Callable] = None, stack: Any = None, silence_s: float = 8.0,
+               version: Optional[dict] = None) -> FastAPI:
     """log_dir: 이 서버의 로그 폴더 (끝난 통화 저장·LLM 원문 조회 기본값). None이면 통화를 파일에 남기지 않는다.
     callers: 실제 테스트 탭 발신자 — 세션은 시나리오처럼 열린다 (Caller.to_scenario).
     voice_url: scripts/voice_server.py 주소 — 없으면 음성 통화 불가. make_voice는 테스트용 (VoiceClient·Endpointer 대체).
     stack: 도구 스택(csagent/stack.py) — 세션은 stack.open으로 열린다 (업무 데이터를 도메인 API에 심음).
-    silence_s: 음성 통화 무응답 대기 — 이만큼 아무도 말하지 않으면 「들리세요?」, 한 번 더면 종료 안내 후 끊는다 (docs/09 C)."""
+    silence_s: 음성 통화 무응답 대기 — 이만큼 아무도 말하지 않으면 「들리세요?」, 한 번 더면 종료 안내 후 끊는다 (docs/09 C).
+    version: 코드·카탈로그 버전 (stack.record_versions) — 끝난 통화 기록에 붙인다."""
     app = FastAPI(title="customer-service-agent")
     store = SessionStore(stack.open) if stack is not None else SessionStore()
     scenarios = [c.to_scenario() for c in callers] + list(scenarios)
@@ -98,7 +100,8 @@ def create_app(agent: Agent, scenarios: list[Scenario], *, callers: list[Caller]
               end_reason=end_reason, turns=len(s.replies), mode=s.mode)
         if log_dir is None:
             return
-        record = {"call_id": s.state.call_id, "scenario": s.scenario_id, "mode": s.mode, "situation": s.situation,
+        record = {"call_id": s.state.call_id, "version": version, "scenario": s.scenario_id, "mode": s.mode,
+                  "situation": s.situation,
                   "created_at": s.created_at, "end_reason": end_reason,
                   "disposition": s.disposition, "history": s.state.history,
                   "replies": [reply_to_dict(r) for r in s.replies], "trace": s.state.trace.to_dicts()}
@@ -348,13 +351,18 @@ def create_default_app() -> FastAPI:
     llm_log = LLMCallLog(log_dir / LLM_CALLS_FILE)
     from csagent.server.callers import load_callers
 
-    from csagent.stack import remote_stack
+    from csagent.stack import record_versions, remote_stack
 
     stack = remote_stack()   # 도구 서버·도메인 API가 떠 있어야 한다 (scripts/run_tools.py) — 없으면 여기서 실패
+    # 버전 기록 — 하루 폴더에 서버를 여러 번 띄우므로 기동마다 한 줄. 통화 기록에도 같은 버전을 붙인다
+    meta = {"started_at": time.time(), **record_versions(stack, log_dir)}
+    with (log_dir / "server_meta.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(meta, ensure_ascii=False) + "\n")
     # scenarios_live/: 실제 테스트 탭 발신자 (평가에는 안 들어감)
     return create_app(build_agent(log=llm_log, tools=stack.tools), load_scenarios(ROOT / "scenarios"),
                       callers=load_callers(ROOT / "scenarios_live"), log_dir=log_dir,
-                      voice_url=load_settings().voice_url, stack=stack)
+                      voice_url=load_settings().voice_url, stack=stack,
+                      version={k: meta.get(k) for k in ("commit", "dirty", "diff_sha", "catalog")})
 
 
 def _session(store: SessionStore, session_id: str):

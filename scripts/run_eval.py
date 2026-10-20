@@ -22,7 +22,7 @@ from csagent.config import ROOT
 from csagent.agent.prompts import BASELINE_TASK
 from csagent.agent.workers.specs import WORKERS
 from csagent.factory import build_agent, build_llm
-from csagent.stack import remote_stack
+from csagent.stack import record_versions, remote_stack
 from csagent.llm_log import LLMCallLog
 from csagent.obs import LLM_CALLS_FILE, event, log_context, setup_logging
 from csagent.evaluation.runner import run_scenario
@@ -53,7 +53,7 @@ def main() -> None:
     log = LLMCallLog(out_dir / LLM_CALLS_FILE)   # 모든 LLM 호출의 입출력 (trace의 call_id로 찾는다)
     print(f"결과 폴더 {out_dir.relative_to(ROOT)}", flush=True)
     # 버전 기록 (docs/08 9절) — 결과가 달라졌을 때 카탈로그 변경 때문인지 구분
-    meta = {"args": vars(args), **stack.versions()}
+    meta = {"args": vars(args), **record_versions(stack, out_dir)}
     (out_dir / "run_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     if stack.tools.warnings:
         print(f"!! 도구 경고: {stack.tools.warnings}", flush=True)

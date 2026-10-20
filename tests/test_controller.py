@@ -244,7 +244,7 @@ def test_inbound_call_starts_with_fixed_greeting():
     from csagent.agent.contracts import CallContext
     s = call(CallContext(direction="inbound", service="토스"))
     assert s.history == [("agent", "안녕하세요, 토스 고객센터 AI 상담원입니다. 통화 내용은 녹음됩니다. 무엇을 도와드릴까요?")]
-    assert [e.kind for e in s.trace.events] == ["greeting"]
+    assert [e.kind for e in s.trace.events if e.kind != "call_open"] == ["greeting"]
     # 아웃바운드는 받는 쪽이 먼저 말한다 — 소개는 워커 지시문이 첫 응답에서
     assert call(CallContext(direction="outbound", service="토스쇼핑")).history == []
 

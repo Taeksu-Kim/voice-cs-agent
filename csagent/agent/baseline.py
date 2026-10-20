@@ -51,7 +51,9 @@ class BaselineAgent:
 
 def start_turn(state: CallState, turn: TurnInput) -> None:
     state.turn += 1
+    state.trace.step = 0
     state.trace.add(state.turn, "turn_start", {"utterance": turn.utterance, "event": turn.event})
+    state.trace.add(state.turn, "state", state.snapshot())
     if state.turn == 1:
         event(log, "call_start", call_id=state.call_id, direction=state.ctx.direction,
               audience=state.ctx.audience)

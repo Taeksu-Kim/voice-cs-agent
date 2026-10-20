@@ -70,6 +70,7 @@ def open_call(ctx: CallContext, fixtures: Fixtures) -> CallState:
     state = new_call(replace(ctx, customer=call_ctx))
     state.ctx.customer_id = f"cust-{state.call_id}"
     fixtures.put(state.ctx.customer_id, {**fixture, "today": ctx.today})
+    state.trace.add(0, "call_open", {"customer_id": state.ctx.customer_id, "fixture": fixture})   # 재현용 초기 데이터
     return state
 
 

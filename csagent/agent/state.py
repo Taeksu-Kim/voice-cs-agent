@@ -78,6 +78,25 @@ class CallState:
     trace: Trace = field(default_factory=Trace)
     tool_snapshot: Optional[Any] = field(default=None, repr=False)   # 이 통화가 쓰는 도구 목록 (MCP 리로드와 무관하게 고정)
 
+    def snapshot(self) -> dict[str, Any]:
+        """턴 시작 때의 상태 — trace "state" 이벤트. 재현기가 이것과 이력으로 이 턴부터 다시 시작한다.
+        이력·trace·컨텍스트는 따로 남으므로 빼고, 집합은 정렬해 목록으로."""
+        def task(t: Optional[TaskState]) -> Optional[dict[str, Any]]:
+            return t and {"name": t.name, "stage": t.stage, "slots": t.slots, "done": t.done, "started": t.started,
+                          "tools_done": sorted(t.tools_done), "tools_empty": sorted(t.tools_empty)}
+        p = self.pending
+        return {
+            "authenticated": self.authenticated, "auth_failures": self.auth_failures,
+            "contact_verified": self.contact_verified,
+            "pending": p and {"kind": p.kind, "turn": p.turn, "items": [list(i) for i in p.items]},
+            "confirmations": [[c.action, c.target, c.turn] for c in self.confirmations],
+            "executed": sorted(self.executed), "unknown_executions": sorted(self.unknown_executions),
+            "succeeded": [list(x) for x in self.succeeded],
+            "active": task(self.active), "queue": [task(t) for t in self.queue],
+            "finished": [task(t) for t in self.finished],
+            "end_blocked_turn": self.end_blocked_turn, "acted_turn": self.acted_turn,
+        }
+
     # -- 재확인 --
 
     def ask(self, kind: PendingKind) -> None:
