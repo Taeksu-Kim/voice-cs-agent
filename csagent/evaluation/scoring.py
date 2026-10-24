@@ -20,10 +20,11 @@ import json
 import random
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from csagent.agent.tools.registry import ToolRegistry
 from csagent.evaluation.path import check_path, critical_executions
+from csagent.evaluation.grounding import judge_turn
 from csagent.evaluation.procedure import ProcedureReport, audit
 from csagent.evaluation.runner import Transcript
 from csagent.evaluation.scenario import Scenario
@@ -41,6 +42,7 @@ class Check:
     name: str
     passed: Optional[bool]       # None = 해당 없음
     detail: str = ""
+    data: Any = None             # 항목별 상세 (근거 판정 v4: 턴별 주장·판정·근거 인용)
 
 
 @dataclass
@@ -230,12 +232,16 @@ _GOAL = ("고객의 통화 목적이 해결됐는가? 정책상 해결할 수 �
 
 class LLMJudge:
     def __init__(self, llm: ChatLLM, instructions: Optional[dict[str, str]] = None,
-                 order_seed: Optional[int] = None) -> None:
+                 order_seed: Optional[int] = None, grounding: str = "v4") -> None:
         """instructions: 워커 이름 → 업무 지시문. 근거 판정에서 그 턴을 맡은 워커의 지시문도 근거로 준다.
-        order_seed: 통화 판정 질문의 제시 순서를 섞는 시드 (판정 일관성 측정용, None이면 원래 순서)."""
+        order_seed: 통화 판정 질문의 제시 순서를 섞는 시드 (판정 일관성 측정용, None이면 원래 순서).
+        grounding: 근거 판정 방식 — v4(2단계: 주장 뽑기 → 대조, csagent/evaluation/grounding.py) | v3(한 번에)."""
+        if grounding not in ("v3", "v4"):
+            raise ValueError(f"grounding: v3 | v4 — {grounding}")
         self.llm = llm
         self.instructions = instructions or {}
         self.order_seed = order_seed
+        self.grounding = grounding
 
     def checks(self, sc: Scenario, tr: Transcript, proc: ProcedureReport) -> list[Check]:
         return self._conversation_checks(sc, tr, proc) + [self._grounded(tr)]
@@ -290,13 +296,14 @@ class LLMJudge:
     # -- 턴별 판정: 근거 없는 사실 주장 (모델 길이 한도 때문에 턴마다 따로) --
 
     def _grounded(self, tr: Transcript) -> Check:
-        bad = []
-        for g in self.grounded_turns(tr):
+        bad, turns = [], self.grounded_turns(tr)
+        data = [{"turn": g["turn"], "claims": g["claims"]} for g in turns if g.get("claims")] or None
+        for g in turns:
             if g["unsupported"] is None:
-                return Check("grounded", None, f"{g['turn']}턴 판정 파싱 실패")
+                return Check("grounded", None, f"{g['turn']}턴 판정 파싱 실패", data)
             if g["unsupported"]:
                 bad.append(f"{g['turn']}턴: {g['claim']}")
-        return Check("grounded", not bad, "; ".join(bad) or "모든 턴 근거 있음")
+        return Check("grounded", not bad, "; ".join(bad) or "모든 턴 근거 있음", data)
 
     def grounded_inputs(self, tr: Transcript) -> list[dict]:
         """턴별 근거 판정 입력 (판정 프롬프트에 들어가는 그대로)."""
@@ -307,6 +314,7 @@ class LLMJudge:
             if e.data.get("role") not in workers_by_turn[e.turn]:
                 workers_by_turn[e.turn].append(e.data.get("role"))
         tool_events = tr.state.trace.of("tool_result")
+        said = {e.turn: e.data.get("utterance", "") for e in tr.state.trace.of("turn_start")}
         out = []
         for turn, reply in enumerate(tr.replies, start=1):
             # 근거 범위: 이번 턴과 직전 턴의 검색 문서 + 지금까지의 모든 도구 결과
@@ -319,11 +327,18 @@ class LLMJudge:
                 "tools": json.dumps(results, ensure_ascii=False) if results else "(없음)",
                 "instructions": "\n\n".join(self.instructions[w] for w in workers_by_turn.get(turn, [])
                                             if w in self.instructions) or "(없음)",
-                "say": reply.text})
+                "say": reply.text,
+                # v4 입력 (목록 그대로 + 직전 고객 말)
+                "doc_list": list(dict.fromkeys(docs)), "tool_list": results, "customer": said.get(turn, "")})
         return out
 
     def grounded_turns(self, tr: Transcript) -> list[dict]:
-        """턴별 근거 판정: {turn, unsupported (파싱 실패면 None), claim}."""
+        """턴별 근거 판정: {turn, unsupported (파싱 실패면 None), claim, claims (v4: 주장별 기록)}."""
+        if self.grounding == "v4":
+            return [{"turn": g["turn"], **judge_turn(
+                self.llm, say=g["say"], customer=g["customer"], docs=g["doc_list"], tools=g["tool_list"],
+                instructions="" if g["instructions"] == "(없음)" else g["instructions"])}
+                for g in self.grounded_inputs(tr)]
         out = []
         for g in self.grounded_inputs(tr):
             prompt = _GROUNDED.format(docs=g["docs"], tools=g["tools"],

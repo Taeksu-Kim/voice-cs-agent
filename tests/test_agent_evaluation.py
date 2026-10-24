@@ -109,7 +109,7 @@ def test_judge_yes_no_to_pass_fail_and_goal_and_grounded():
             {"id": "must_not_0", "answer": "NO", "reason": "안 함"},
             {"id": "goal_resolved", "answer": "YES", "reason": "해결"}]}),
         json.dumps({"unsupported": "NO", "claim": ""}),   # 1턴 근거 판정
-    ]))
+    ]), grounding="v3")
     checks = {c.name: c.passed for c in judge.checks(sc, tr, audit(tr.state.trace, TOOLS))}
     assert checks == {"mention_0": True, "must_not_0": True, "goal_resolved": True, "grounded": True}
 
@@ -158,7 +158,7 @@ def test_judge_uses_transfer_goal_and_worker_instructions_and_sim_diagnostic():
         json.dumps({"unsupported": "NO", "claim": ""}),
         json.dumps({"invented": "YES", "what": "1. 이름 김철수"}),
     ])
-    judge = LLMJudge(judge_llm, {"baseline": "지시문: 토스 비밀번호로 해제"})
+    judge = LLMJudge(judge_llm, {"baseline": "지시문: 토스 비밀번호로 해제"}, grounding="v3")
     score_ = score(sc, tr, TOOLS, judge)
     goal_prompt, grounded_prompt, sim_prompt = (c[0]["content"] for c in judge_llm.calls)
     assert "사람 상담원에게 연결됐다" in goal_prompt

@@ -1,0 +1,50 @@
+{"run": "20261020_071342_C", "scenario_id": "o1_b0_manager", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "o1_b0_manager", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "o1_h7_not_manager", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "o1_h7_not_manager", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "o1_h6_objection", "repeat": 0, "passed": false, "original_passed": true, "failed": ["grounded: 4턴: 「소명 결과가 나오기 전까지는 점수가 유지됩니다」 unsupported; 5턴: 「점수 취소 여부는 소명 가이드에서 확인해 주세요.」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "o1_h6_objection", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_general_eta", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_general_eta", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_stuck_tracking", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_stuck_tracking", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b2_vague_two_orders", "repeat": 0, "passed": false, "original_passed": true, "failed": ["grounded: 3턴: 「아직 발송 전이라」 contradicted; 「정확한 도착일을 안내드리긴 어렵고」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "s1_b2_vague_two_orders", "repeat": 1, "passed": false, "original_passed": true, "failed": ["grounded: 2턴: 「발송되면 배송 조회가 시작돼요」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "s1_b6_other_persons_order", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b6_other_persons_order", "repeat": 1, "passed": false, "original_passed": false, "failed": ["no_repeat: 반복 1회"]}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_tracking_not_found", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_tracking_not_found", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_order_number_typo", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s1_b0_order_number_typo", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b0_defect", "repeat": 0, "passed": false, "original_passed": false, "failed": ["voice_length: 150자 초과 1턴"]}
+{"run": "20261020_071342_C", "scenario_id": "s3_b0_defect", "repeat": 1, "passed": false, "original_passed": false, "failed": ["voice_length: 150자 초과 1턴"]}
+{"run": "20261020_071342_C", "scenario_id": "s3_b0_change_mind", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b0_change_mind", "repeat": 1, "passed": false, "original_passed": false, "failed": ["grounded: 2턴: 「링크를 누르시면 교환·환불 접수 화면이 열리는데, 거기에 접수 버튼이 있어요.」 unsupported; 3턴: 「245 사이즈 선택은 판매자 답변 후에 가능해요.」 unsupported; 「판매자가 2영업일"]}
+{"run": "20261020_071342_C", "scenario_id": "s3_b5_seller_no_reply", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b5_seller_no_reply", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b0_in_transit", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b0_in_transit", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b6_refund_promise", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s3_b6_refund_promise", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s4_b0_stranger", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s4_b0_stranger", "repeat": 1, "passed": false, "original_passed": true, "failed": ["grounded: 3턴: 「정확한 진행 상황은 접수 후 안내를 확인해 주시면 돼요」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "s4_b0_friend", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s4_b0_friend", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s4_b5_fraud", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s4_b5_fraud", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_report_lost", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_report_lost", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b1_change_mind", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b1_change_mind", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_h8_backend_failure", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_h8_backend_failure", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b7_auth_fail", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b7_auth_fail", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_no_toss_card", "repeat": 0, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_no_toss_card", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_other_company_card", "repeat": 0, "passed": false, "original_passed": true, "failed": ["grounded: 3턴: 「현대카드 앱에서 고객센터 연락처를 확인해 보시거나, 검색해서 확인해 주시면 좋겠어요」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_other_company_card", "repeat": 1, "passed": false, "original_passed": true, "failed": ["grounded: 3턴: 「현대카드 앱이나 홈페이지에서 고객센터 번호를 확인해 주시면 될 것 같아요」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_ask_card_status", "repeat": 0, "passed": false, "original_passed": false, "failed": ["disposition: refused (기대 ['resolved', 'unresolved'])"]}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_ask_card_status", "repeat": 1, "passed": true, "original_passed": true, "failed": []}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_then_second_issue", "repeat": 0, "passed": false, "original_passed": true, "failed": ["grounded: 2턴: 「토스뱅크 체크카드 2468을 일시정지할게요」 unsupported"]}
+{"run": "20261020_071342_C", "scenario_id": "s5_b0_then_second_issue", "repeat": 1, "passed": true, "original_passed": true, "failed": []}

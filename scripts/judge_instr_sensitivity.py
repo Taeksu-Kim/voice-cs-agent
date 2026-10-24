@@ -37,12 +37,12 @@ def load_variants(specs: list[str]) -> dict[str, dict[str, str]]:
     return out
 
 
-def judge_turns(llm, variants: dict[str, dict[str, str]], row: dict, k: int) -> list[dict]:
+def judge_turns(llm, variants: dict[str, dict[str, str]], row: dict, k: int, grounding: str = "v4") -> list[dict]:
     tr = saved_transcript(row)
     key = f"{row['_run']}/{row['scenario_id']}/r{row['repeat']}"
     per_turn: dict[int, dict] = {}
     for name, instr in variants.items():
-        judge = LLMJudge(llm, instr)
+        judge = LLMJudge(llm, instr, grounding=grounding)
         for _ in range(k):
             for g in judge.grounded_turns(tr):
                 t = per_turn.setdefault(g["turn"], {"key": key, "scenario_id": row["scenario_id"], "turn": g["turn"],
@@ -52,6 +52,10 @@ def judge_turns(llm, variants: dict[str, dict[str, str]], row: dict, k: int) -> 
                 t["verdicts"].setdefault(name, []).append(passed)
                 if g["unsupported"]:
                     t["claims"].setdefault(name, []).append(g["claim"])
+                if grounding == "v4":   # 주장별 판정 (변형 사이에 주장 목록이 같은지·어느 주장이 뒤집혔는지)
+                    t.setdefault("v4", {}).setdefault(name, []).append(
+                        [{k2: c.get(k2) for k2 in ("span", "verdict", "source", "evidence", "note")}
+                         for c in g.get("claims") or []])
     return list(per_turn.values())
 
 
@@ -61,6 +65,7 @@ def main() -> None:
     ap.add_argument("--instr", nargs="*", default=[], help="이름=지시문 JSON (워커 이름 → 지시문)")
     ap.add_argument("--k", type=int, default=2, help="변형마다 같은 입력 재판정 횟수 (판정기 결정성 확인)")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--grounding", default="v4", help="근거 판정 방식 v4(2단계) | v3")
     args = ap.parse_args()
 
     variants = load_variants(args.instr)
@@ -68,7 +73,8 @@ def main() -> None:
             for run in args.runs for line in (Path(run) / "results.jsonl").open(encoding="utf-8")]
     out_dir = ROOT / "labels" / f"instr_sens_{datetime.now():%Y%m%d_%H%M%S}"
     out_dir.mkdir(parents=True)
-    print(f"통화 {len(rows)}건 · 변형 {list(variants)} · k={args.k} → {out_dir.relative_to(ROOT)}", flush=True)
+    print(f"통화 {len(rows)}건 · 변형 {list(variants)} · k={args.k} · 판정 {args.grounding} → {out_dir.relative_to(ROOT)}",
+          flush=True)
 
     llm = build_llm()
     errors: list[dict] = []
@@ -76,7 +82,7 @@ def main() -> None:
     def safe(r: dict) -> list[dict]:
         # LLM 재시도(csagent/llm.py)까지 실패한 통화는 건너뛰고 기록만 남긴다 — 하나 때문에 전체를 버리지 않게
         try:
-            return judge_turns(llm, variants, r, args.k)
+            return judge_turns(llm, variants, r, args.k, args.grounding)
         except Exception as e:
             errors.append({"key": f"{r['_run']}/{r['scenario_id']}/r{r['repeat']}", "error": repr(e)[:300]})
             print(f"[ERR] {errors[-1]['key']} {type(e).__name__}", flush=True)
@@ -90,7 +96,8 @@ def main() -> None:
         print(f"!! 건너뛴 통화 {len(errors)}건 (errors.jsonl)", flush=True)
     with (out_dir / "verdicts.jsonl").open("w", encoding="utf-8") as f:
         f.writelines(json.dumps(t, ensure_ascii=False) + "\n" for t in turns)
-    (out_dir / "variants.json").write_text(json.dumps({"runs": args.runs, "instr": args.instr, "k": args.k},
+    (out_dir / "variants.json").write_text(json.dumps({"runs": args.runs, "instr": args.instr, "k": args.k,
+                                                       "grounding": args.grounding},
                                                       ensure_ascii=False, indent=1), encoding="utf-8")
 
     names = list(variants)

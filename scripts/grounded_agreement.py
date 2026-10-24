@@ -1,6 +1,7 @@
 """근거 판정 프롬프트를 바꿨을 때 참조 라벨과의 일치가 유지되는지 — 저장된 판정 입력을 지금 프롬프트로 다시 판정한다.
 
     python scripts/grounded_agreement.py [--items labels/rejudge_20261017_192929/items.jsonl] [--labels labels/judge_v1]
+        [--grounding v4|v3]
 
 입력은 rejudge가 남긴 items.jsonl (발화·검색 문서·도구 결과·지시문 그대로), 라벨은 judge_v1의 labels.jsonl·sample_meta.jsonl.
 무작위 세트(일치율 계산용)와 표적 세트(알려진 오판 후보)를 따로 센다. 라벨은 Opus 참조 라벨이다 — 사람 라벨이 아니다.
@@ -16,15 +17,35 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from csagent.config import ROOT
+from csagent.evaluation.grounding import judge_turn
 from csagent.evaluation.scoring import _GROUNDED
 from csagent.factory import build_llm
 from csagent.llm import parse_json
+
+
+def _split(docs: str) -> list[str]:
+    return [] if docs == "(없음)" else [d for d in docs.split("\n\n") if d.strip()]
+
+
+def _customer(it: dict) -> str:
+    """v4 1단계에 주는 직전 고객 말 — 원래 실행 기록에서 찾는다 (items에는 없다). 실행이 없으면 빈 값."""
+    path = ROOT / "runs" / it["run"] / "results.jsonl"
+    turn = it.get("turn") or 0
+    if not path.exists() or not turn:
+        return ""
+    for line in path.open(encoding="utf-8"):
+        row = json.loads(line)
+        if row["scenario_id"] == it["scenario_id"] and row["repeat"] == it["repeat"]:
+            return next((e["data"].get("utterance", "") for e in row["trace"]
+                         if e["kind"] == "turn_start" and e["turn"] == turn), "")
+    return ""
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--items", default=str(ROOT / "labels" / "rejudge_20261017_192929" / "items.jsonl"))
     ap.add_argument("--labels", default=str(ROOT / "labels" / "judge_v1"))
+    ap.add_argument("--grounding", default="v4", help="v4(2단계) | v3")
     args = ap.parse_args()
 
     read = lambda p: [json.loads(l) for l in Path(p).open(encoding="utf-8") if l.strip()]
@@ -36,9 +57,15 @@ def main() -> None:
     rows = []
     for k in keys:
         it = items[k]
-        res = parse_json(llm.chat([{"role": "user", "content": _GROUNDED.format(
-            docs=it["docs"], tools=it["tools"], instructions=it["instructions"], say=it["say"])}],
-            max_tokens=200, json_mode=True).text)
+        if args.grounding == "v4":
+            g = judge_turn(llm, say=it["say"], customer=_customer(it), docs=_split(it["docs"]),
+                           tools=[] if it["tools"] == "(없음)" else json.loads(it["tools"]),
+                           instructions="" if it["instructions"] == "(없음)" else it["instructions"])
+            res = {"claim": g["claim"], "unsupported": "YES" if g["unsupported"] else "NO"}
+        else:
+            res = parse_json(llm.chat([{"role": "user", "content": _GROUNDED.format(
+                docs=it["docs"], tools=it["tools"], instructions=it["instructions"], say=it["say"])}],
+                max_tokens=200, json_mode=True).text)
         now = not str(res.get("unsupported", "")).upper().startswith("Y")
         rows.append({"key": k, "set": meta[k]["set"], "label": labels[k]["label"], "conf": labels[k]["confidence"],
                      "before": meta[k]["judge_pass"], "now": now, "claim": res.get("claim", ""), "say": it["say"]})
