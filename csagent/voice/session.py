@@ -40,6 +40,7 @@ import numpy as np
 
 from csagent.agent.contracts import TurnInput
 from csagent.obs import event
+from csagent.voice.spoken import for_tts
 from csagent.voice.sentences import SentenceSplitter
 from csagent.voice.vad import Endpointer
 
@@ -61,7 +62,7 @@ class VoiceClient:
         return r.json()
 
     async def tts(self, text: str, voice: Optional[str] = None) -> tuple[bytes, int]:
-        r = await self._http.post(f"{self.base}/tts", json={"text": text, "voice": voice or self.voice,
+        r = await self._http.post(f"{self.base}/tts", json={"text": for_tts(text), "voice": voice or self.voice,
                                                             "steps": self.steps})
         r.raise_for_status()
         return r.content, int(r.headers.get("X-Gen-Ms", 0))
