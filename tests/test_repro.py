@@ -95,3 +95,13 @@ def test_continue_with_recorded_customer_replays_later_lines():
     agent = _agent([_say("배송중이에요."), _say("배송중이에요.")])   # 고객이 「언제 와요」로 바꿔 물어도 같은 답
     r = run_turn(agent, STACK, SC, row, spec)
     assert r["texts"] == ["배송중이에요.", "배송중이에요."] and r["hits"] == ["check: no_repeat"]
+
+
+def test_utterance_override_replaces_customer_line():
+    row = _recorded_call()
+    spec = ReproSpec.from_dict({"case": "x/y", "at": "t2", "fail_if": [{"len_over": 1}], "utterance": "도착 언제쯤이에요"})
+    llm = ScriptedLLM([_say("내일이요.")])
+    run_turn(BaselineAgent(FakeRetriever(), llm, TOOLS, gate=ExecutionGate()), STACK, SC, row, spec)
+    assert "도착 언제쯤이에요" in llm.calls[-1][-1]["content"] and "언제 와요" not in llm.calls[-1][-1]["content"]
+    with pytest.raises(ReproError):
+        ReproSpec.from_dict({"case": "x/y", "at": "t2.s1", "mode": "step", "fail_if": [{"len_over": 1}], "utterance": "a"})

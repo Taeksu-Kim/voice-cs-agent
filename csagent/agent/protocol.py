@@ -16,6 +16,7 @@ when 어휘 (모두 AND):
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -25,6 +26,8 @@ import yaml
 from csagent.agent.state import CallState
 
 PROTOCOL_DIR = Path(__file__).parent / "protocols"
+# 지시문 후보 실험용 (APO): 이 폴더에 같은 이름의 yaml이 있으면 그것을 읽는다. 저장소 지시문은 그대로 두고 후보만 끼워 돌린다
+OVERRIDE_ENV = "CSAGENT_PROTOCOL_OVERRIDE"
 
 
 @dataclass(frozen=True)
@@ -86,8 +89,16 @@ def _holds(state: CallState, key: str, value: Any) -> bool:
     raise ValueError(f"알 수 없는 프로토콜 조건: {key}")
 
 
+def protocol_path(name: str, directory: Optional[Path] = None) -> Path:
+    if directory is None and os.environ.get(OVERRIDE_ENV):
+        candidate = Path(os.environ[OVERRIDE_ENV]) / f"{name}.yaml"
+        if candidate.exists():
+            return candidate
+    return (directory or PROTOCOL_DIR) / f"{name}.yaml"
+
+
 def load_protocol(name: str, directory: Optional[Path] = None) -> Protocol:
-    raw = yaml.safe_load(((directory or PROTOCOL_DIR) / f"{name}.yaml").read_text(encoding="utf-8"))
+    raw = yaml.safe_load(protocol_path(name, directory).read_text(encoding="utf-8"))
     steps = tuple(Step(s["id"], s["say"], tuple(s.get("tools") or ()), dict(s.get("when") or {}))
                   for s in raw["steps"])
     for s in steps:   # 오타 조건은 실행 중이 아니라 읽을 때 잡는다

@@ -32,6 +32,11 @@ from csagent.obs import LLM_CALLS_FILE, log_context, setup_logging
 from csagent.stack import record_versions, remote_stack
 
 
+# LLM 없이 채점되는 항목 (scoring.rule_checks·path_checks)
+RULE_CHECKS = {"disposition", "tools_required", "tools_forbidden", "milestones", "critical_exec", "no_repeat", "finished",
+               "required_in_time", "procedure", "voice_length", "voice_format", "gold_doc_retrieved"}
+
+
 def _value(v: str):
     return True if v == "true" else False if v == "false" else int(v) if v.isdigit() else v
 
@@ -74,7 +79,9 @@ def main() -> None:
         agent = build_agent("C", log=log, tools=stack.tools)
         customer_llm = build_llm(log=log, source="customer")
         judge = None
-        if spec.mode == "continue":
+        # 판정기는 술어에 LLM 판정 항목(grounded 등)이 있을 때만 — 규칙 채점(milestones 등)만 보면 판정 호출이 시간 대부분을 쓴다
+        needs_judge = any(k == "check" and v not in RULE_CHECKS for p in spec.fail_if for k, v in p.items())
+        if spec.mode == "continue" and needs_judge:
             instructions = {"baseline": BASELINE_TASK, **{n: w.policy.task for n, w in WORKERS.items()}}
             judge = LLMJudge(build_llm(log=log, source="judge"), instructions)
         results = []

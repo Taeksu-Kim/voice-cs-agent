@@ -60,11 +60,16 @@ class ReproSpec:
     repeat: int = 5
     fail_if: list[dict[str, Any]] = field(default_factory=list)
     customer: str = "recorded"
+    utterance: Optional[str] = None      # 그 턴 고객 말을 바꿔 넣는다 (테스트 변형 — 같은 상황, 다른 말). 없으면 기록 그대로
+    later: Optional[list[str]] = None    # continue + recorded: 이후 고객 말을 바꿔 넣는다. 없으면 기록 그대로
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ReproSpec":
         spec = cls(d["case"], str(d["at"]), d.get("mode", "turn"), int(d.get("repeat", 5)), list(d.get("fail_if") or []),
-                   d.get("customer", "recorded"))
+                   d.get("customer", "recorded"), d.get("utterance"),
+                   list(d["later"]) if d.get("later") is not None else None)
+        if spec.mode == "step" and (spec.utterance or spec.later):
+            raise ReproError("step 모드는 LLM 입력을 그대로 다시 보낸다 — utterance·later를 쓸 수 없다")
         if spec.customer not in ("recorded", "simulator"):
             raise ReproError(f"customer는 recorded | simulator: {spec.customer}")
         if spec.mode not in ("step", "turn", "continue"):
@@ -215,8 +220,10 @@ def run_turn(agent: Any, stack: Any, sc: Scenario, row: dict[str, Any], spec: Re
     """turn·continue 한 번. customer가 있으면(continue) 그 턴 뒤를 시뮬레이터로 이어 간다."""
     turn, _ = spec.coordinate()
     state, utterance, ev = restore(stack, sc, row, turn)
+    utterance = spec.utterance if spec.utterance is not None else utterance
     if spec.mode == "continue" and spec.customer == "recorded":
-        later = [e["data"]["utterance"] for e in row["trace"] if e["kind"] == "turn_start" and e["turn"] > turn]
+        later = spec.later if spec.later is not None else [
+            e["data"]["utterance"] for e in row["trace"] if e["kind"] == "turn_start" and e["turn"] > turn]
         customer = ScriptedCustomer(later)
     before = len(state.trace.events)
     try:

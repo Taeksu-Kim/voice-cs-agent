@@ -15,6 +15,8 @@ allowed-tools: Read, Grep, Glob, Bash(grep:*), Bash(ls:*), Bash(/home/ubuntu/min
 
 - 파일 보기는 **Read**, 검색은 Grep 도구(없으면 `grep -n <패턴> <파일>` 한 줄). `llm_calls.jsonl`처럼 큰 파일은 Read(`allow_large`)로 읽거나 grep으로 call_id를 찾는다
 - 플러그인·MCP 도구(ctx_execute 등)는 쓰지 않는다 — 권한이 없다
+- **백그라운드 실행(run_in_background)·Monitor를 쓰지 않는다. 명령은 하나씩 끝까지 기다린다** (Bash timeout 600000) —
+  비대화형 실행이라 알림을 기다리면 세션이 끝나고 이어진 세션에서는 권한이 풀린다. 재현은 로컬 벡터 DB를 하나만 열 수 있어 동시에 돌리면 실패한다
 - 명령은 아래 형태 **그대로 한 줄에 하나**. 앞에 `cd`를 붙이거나, 변수·`&&`·`;`·파이프로 묶거나, 임시 스크립트를 쓰면 거부된다
   (작업 디렉터리는 이미 프로젝트 루트다)
   - `/home/ubuntu/miniconda3/envs/customer-service-agent/bin/python scripts/repro.py <case> --at t3 --mode turn --repeat 5 --fail repeat=true`
@@ -37,6 +39,8 @@ allowed-tools: Read, Grep, Glob, Bash(grep:*), Bash(ls:*), Bash(/home/ubuntu/min
    오판이면 층 = 판정기, 3번 건너뛰고 5번으로
 3. **재현으로 기준치** — `repro.yaml` 초안(가장 심한 신호 하나만 담겨 있다)을 참고해, 신호마다 구간·술어를 맞춘 명세를 명령줄 인자로 `scripts/repro.py`에 준다. 기본 5회.
    먼저 `bash scripts/serve.sh status`로 모델 서버를 확인한다 (꺼져 있으면 재현하지 않고 확신도 = 가설)
+   **결함이 앞 턴 대화에 의존하면**(반복·되풀이처럼 상담원 자기 앞 말이 원인) 재현 기준은 그 전 턴부터 continue 모드(`customer: recorded`)로 잡는다.
+   turn 모드는 앞 턴을 기록된 말로 고정해서, 지시문을 바꾼 뒤 앞 말부터 달라지는 경우를 보지 못한다 (10/25 s3_b0_defect: turn 0/5, continue 3/3)
    - 재현되면(예: 5/5) 확신도 = 재현됨. 이 명세와 기준치가 수정 전후 비교의 기준이 된다 — **이후 바꾸지 않는다**
    - 재현이 안 되면 고객 쪽 변수부터 의심한다 (continue 모드는 `customer: recorded`로 고객 말 고정). 그래도 안 되면 확신도 = 가설
 4. **원인과 층** — 그 지점의 LLM 입력에 무엇이 있었고 무엇이 없었는지로 원인을 찾는다:

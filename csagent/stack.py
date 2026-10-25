@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import Any, Optional
 import httpx
 
 from csagent.agent.contracts import CallContext
+from csagent.agent.protocol import OVERRIDE_ENV
 from csagent.agent.state import CallState
 from csagent.agent.tools.builtin import builtin_specs
 from csagent.agent.tools.registry import ToolRegistry
@@ -73,6 +75,10 @@ def record_versions(stack: "ToolStack", out_dir: Path) -> dict[str, Any]:
     """실행 하나의 버전 기록 (평가 run_meta·서버 server_meta). dirty면 변경 내용을 code_<diff_sha>.diff로 남긴다
     — 커밋만으로는 그때 코드·지시문을 되살릴 수 없다."""
     meta = {**stack.versions(), "models": model_versions()}
+    override = os.environ.get(OVERRIDE_ENV)
+    if override:   # 지시문 후보로 돌린 실행 — 어느 후보 파일이었는지 (APO)
+        meta["protocol_override"] = {f.name: hashlib.sha256(f.read_bytes()).hexdigest()[:12]
+                                     for f in sorted(Path(override).glob("*.yaml"))} | {"dir": override}
     if meta.get("diff_sha"):
         path = out_dir / f"code_{meta['diff_sha']}.diff"
         if not path.exists():
